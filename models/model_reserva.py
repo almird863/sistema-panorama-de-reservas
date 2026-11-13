@@ -158,11 +158,9 @@ def deletar_db_reserva(id_reserva):
 # NOVO: consultas e ações para a tela de Check-in / Check-out
 # ----------------------------------------------------------------------
 #
-# Observação sobre o JOIN com Apartamentos:
-# Estou assumindo que a tabela Apartamentos tem uma coluna chamada "numero"
-# com o número do apartamento (ex.: "204"). Se o nome real for outro
-# (ex.: "numero_apto", "identificacao"), troque "a.numero" pelo nome certo
-# nas três consultas abaixo (está marcado com # AJUSTAR).
+# [MOCK] Confirmado em models/model_apto.py: a coluna do número do apartamento se
+# chama "numeracao" (não "numero"). As três consultas abaixo já usam o
+# nome certo.
 
 def listar_db_reservas_para_checkin():
     """Reservas em aberto cujo hóspede ainda não chegou (aguardando check-in)."""
@@ -170,9 +168,9 @@ def listar_db_reservas_para_checkin():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
-            LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
+            LEFT JOIN Apartamentos a ON a.id = r.id_apto
             WHERE r.status = 'em aberto' AND r.checkin_feito = 0
             ORDER BY r.data_entrada
         ''')
@@ -188,9 +186,9 @@ def listar_db_reservas_hospedadas():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
-            LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
+            LEFT JOIN Apartamentos a ON a.id = r.id_apto
             WHERE r.status = 'em aberto' AND r.checkin_feito = 1
             ORDER BY r.data_entrada
         ''')
@@ -206,7 +204,7 @@ def listar_db_reservas_concluidas():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
             LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
             WHERE r.status = 'concluido'
@@ -243,3 +241,27 @@ def marcar_checkout_db(id_reserva):
         cx.rollback()
         print(f"Erro ao marcar check-out: {e}")
         raise
+
+
+# ----------------------------------------------------------------------
+# [MOCK] NOVO: reservas de UM cliente, já com o número do apartamento (usado pela
+# tela "Minha conta" / view_usuarios.py através de ControlReserva, em
+# controls/control_reserva.py)
+# ----------------------------------------------------------------------
+
+def buscar_db_reservas_cliente(id_cliente):
+    """Todas as reservas de um cliente, com o número do apartamento (JOIN)."""
+    try:
+        cs.execute('''
+            SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
+                   r.qt_pessoas, r.valor, r.status, r.checkin_feito,
+                   a.numeracao AS numero_apto
+            FROM Reservas r
+            LEFT JOIN Apartamentos a ON a.id = r.id_apto
+            WHERE r.id_cliente = ?
+            ORDER BY r.data_entrada DESC
+        ''', (id_cliente,))
+        return cs.fetchall()
+    except sqlite3.Error as e:
+        print(f"Erro ao buscar reservas do cliente: {e}")
+        return []

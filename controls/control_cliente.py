@@ -93,3 +93,14 @@ def AutenticarCliente(cpf, senha):
         return False, "Não foi possível verificar a senha."
 
     return True, "Login realizado com sucesso."
+
+
+# ----------------------------------------------------------------------
+# [MOCK] NOVO: classe fina usada pela tela "Minha conta" (views/view_usuarios.py),
+# que chama control_cliente.ControlCliente().buscar_por_cpf(cpf) em vez da
+# função solta. Só repassa para buscar_cliente_por_cpf, que já existia e
+# devolve a tupla (id, nome, idade, cpf, cidade_origem, senha).
+# ----------------------------------------------------------------------
+class ControlCliente:
+    def buscar_por_cpf(self, cpf):
+        return buscar_cliente_por_cpf(cpf)
