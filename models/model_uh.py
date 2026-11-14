@@ -60,6 +60,22 @@ def atualizar_uh_status(status, numeracao):
         return True, f"Unidade Habitacional Nº{numeracao} atualizada com o status: {status}"
 
     except sqlite3.Error as e:
-        cx. rollback()
+        cx.rollback()
+
+        return False, f"Erro: {e}"
+
+
+# -------------------------------------------------------------------------------------- ATUALIZAÇÕES
+
+
+def deletar_uh(id):
+    try:
+        cs.execute("DELETE FROM Unidade_Habitacional WHERE id = ?", (id,))
+        cx.commit()
+
+        return True, f"Unidade Habitacional excluida com sucesso."
+
+    except sqlite3.Error as e:
+        cx.rollback()
 
         return False, f"Erro: {e}"
