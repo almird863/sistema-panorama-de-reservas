@@ -32,10 +32,10 @@ def buscar_uh(numero):
 # -------------------------------------------------------------------------------------- INSERIR
 
 
-def inserir_uh(numeracao, status, vm, vr, acc):
+def inserir_uh(numeracao, vm, vr, acc):
     try:
-        cs.execute('''INSERT INTO Unidade_Habitacional (numeracao, status, vista_mar, vista_rua, acessível)
-                    VALUES (?,?,?,?,?)''', (numeracao, status, vm, vr, acc))
+        cs.execute('''INSERT INTO Unidade_Habitacional (numeracao, vista_mar, vista_rua, acessivel)
+                    VALUES (?,?,?,?)''', (numeracao, vm, vr, acc))
         cx.commit()
         
         return True, f"Unidade Habitacional Nº{numeracao} inserida com sucesso."
@@ -60,6 +60,22 @@ def atualizar_uh_status(status, numeracao):
         return True, f"Unidade Habitacional Nº{numeracao} atualizada com o status: {status}"
 
     except sqlite3.Error as e:
-        cx. rollback()
+        cx.rollback()
+
+        return False, f"Erro: {e}"
+
+
+# -------------------------------------------------------------------------------------- ATUALIZAÇÕES
+
+
+def deletar_uh(id):
+    try:
+        cs.execute("DELETE FROM Unidade_Habitacional WHERE id = ?", (id,))
+        cx.commit()
+
+        return True, f"Unidade Habitacional excluida com sucesso."
+
+    except sqlite3.Error as e:
+        cx.rollback()
 
         return False, f"Erro: {e}"
