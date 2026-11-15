@@ -3,21 +3,66 @@ View de Reservas - Sistema de Reservas - Hotel
 Compatível tanto como tela embutida (TelaBase no menu principal)
 quanto executável de forma independente para testes.
 
-Seguindo o design da imagem:
-- Topo: Ícone e Título "Reservas - Confira a disponibilidade e faça sua reserva"
-- Painel Esquerdo: "Filtros de Busca" (Data Entrada, Data Saída com Calendário Popup, Tipo de Apto, Botão Buscar)
-- Painel Direito: "Apartamentos Disponíveis" (Cards com foto, tipo, descrição, diária e botão Reservar)
+----------------------------------------------------------------------
+LEIA ANTES DE MEXER — como esse arquivo lida com dados neste momento
+----------------------------------------------------------------------
+A nossa parte no projeto (Wallace) é só VIEWS. O esquema de banco mudou
+bastante nos últimos dias (branch `models`/`work`):
+
+    Apartamentos  -> Unidade_Habitacional  (id, numeracao, status, ...)
+    Reservas      -> Estadias              (checkin_data/checkout_data
+                                             reais, sem mais reserva por
+                                             data futura)
+
+As controllers antigas (`controls/control_apto.py`, `controls/control_reserva.py`)
+ainda apontam pros módulos antigos (`models.model_apto`, `models.model_reserva`),
+que não existem mais, e ainda não existe nenhum `control_uh.py` /
+`control_estadia.py` prontos para o novo esquema. Pra não travar esperando
+isso e pra não mexer em código de outros colegas sem combinar, esta view
+NÃO importa `models` nem `controls` de ninguém além da tentativa abaixo:
+ela tenta importar um "control_uh" / "control_estadia" (hipotéticos,
+ainda não existem) e, se não encontrar, cai automaticamente num MOCK local
+(dados em memória, só pra tela funcionar e ser demonstrável).
+
+Quando o colega responsável por controls criar esses arquivos com essas
+assinaturas, a troca é automática — não precisa mexer nesta view:
+
+    controls/control_uh.py
+        ListarUH() -> lista de tuplas (id, numeracao, status, vista_mar,
+                                        vista_rua, acessivel)
+        AtualizarStatusUH(numeracao, novo_status) -> (bool, mensagem)
+
+    controls/control_estadia.py
+        CadastrarEstadia(nome_hospede, cpf_hospede, id_uh, qt_pessoas)
+            -> (bool, mensagem)
+        FazerCheckin(id_estadia) -> (bool, mensagem)
+        FazerCheckout(id_estadia) -> (bool, mensagem)
+
+Status possíveis em Unidade_Habitacional (ver models/model_uh.py):
+    "Livre e limpa", "Em limpeza", "Hospede na casa", "Reservado", "Indisponível"
+
+Essa tela resume esses 5 status em 3 cores pra bater com o protótipo:
+    verde   (disponível)   <- "Livre e limpa"
+    vermelho (ocupado)     <- "Hospede na casa", "Reservado"
+    cinza   (indisponível) <- "Em limpeza", "Indisponível"
+
+O calendário à direita, por enquanto, pinta o MÊS INTEIRO com a cor do
+status atual do quarto — ainda não existe no banco nenhuma informação de
+"dia a dia" (isso morreu quando data_entrada/data_saida virou
+checkin_data/checkout_data reais). Quando existir um histórico real de
+estadias por dia, dá pra pintar dia a dia de verdade; o ponto de troca é
+a função `_status_dias_do_mes()` abaixo.
 """
 
 import calendar
-from datetime import date, datetime, timedelta
-from tkinter import messagebox
+from datetime import date, datetime
 import customtkinter as ctk
-from views.componentes import centralizar_janela
+from tkinter import messagebox
 
 from views.componentes import (
     AZUL_ESCURO, AZUL_HOVER, LARANJA, LARANJA_HOVER, FUNDO_DIREITO,
-    BORDA_CAMPO, TEXTO_CINZA, carregar_imagem, criar_barra_titulo
+    BORDA_CAMPO, TEXTO_CINZA, carregar_imagem, criar_barra_titulo,
+    centralizar_janela,
 )
 
 try:
@@ -31,15 +76,22 @@ except ImportError:
         def ao_exibir(self):
             pass
 
-# Import do Model/Controller de Apartamentos (se disponível)
+# ----------------------------------------------------------------------
+# Import "otimista" dos controls do novo esquema (ainda não existem).
+# Se/quando existirem com essas assinaturas, passam a ser usados sem
+# precisar mexer em mais nada aqui.
+# ----------------------------------------------------------------------
 try:
-    from models.model_apto import listar_aptos, buscar_apto
+    from controls.control_uh import ListarUH, AtualizarStatusUH
+    _TEM_CONTROL_UH = True
 except Exception:
-    def listar_aptos(somente_vagos=False):
-        return []
+    _TEM_CONTROL_UH = False
 
-    def buscar_apto(numero):
-        return None
+try:
+    from controls.control_estadia import CadastrarEstadia, FazerCheckin, FazerCheckout
+    _TEM_CONTROL_ESTADIA = True
+except Exception:
+    _TEM_CONTROL_ESTADIA = False
 
 FONTE = "Segoe UI"
 BORDA_CARD = "#DCE4F0"
@@ -61,251 +113,133 @@ STATUS_CORES = {
     "indisponivel": (CINZA, CINZA_CLARO, "Indisponível"),
 }
 
-# ----------------------------------------------------------------------
-# MOCK: quartos indisponíveis (limpeza/manutenção) -------------------
-# Sem suporte real no banco ainda (ver nota no topo do arquivo).
-# Troque/alimente esta lista quando houver uma fonte de dados real.
-# ----------------------------------------------------------------------
-QUARTOS_INDISPONIVEIS_MOCK = set()  # ex.: {4, 9}
+# Status reais de Unidade_Habitacional -> grupo de cor usado na tela
+STATUS_REAL_PARA_GRUPO = {
+    "Livre e limpa": "disponivel",
+    "Em limpeza": "indisponivel",
+    "Hospede na casa": "ocupado",
+    "Reservado": "ocupado",
+    "Indisponível": "indisponivel",
+}
 
 
 # ----------------------------------------------------------------------
-# FUNÇÕES DE DADOS (status do quarto e status por dia no calendário)
+# MOCK: 10 Unidades Habitacionais em memória ---------------------------
+# Usado só enquanto controls/control_uh.py e controls/control_estadia.py
+# não existirem (ver nota no topo do arquivo). Dados somem ao reiniciar
+# o programa — é só pra tela ficar demonstrável e testável isoladamente.
+# ----------------------------------------------------------------------
+_MOCK_UHS = [
+    {"id": 1, "numeracao": 101, "status": "Livre e limpa"},
+    {"id": 2, "numeracao": 102, "status": "Hospede na casa"},
+    {"id": 3, "numeracao": 103, "status": "Livre e limpa"},
+    {"id": 4, "numeracao": 104, "status": "Em limpeza"},
+    {"id": 5, "numeracao": 105, "status": "Livre e limpa"},
+    {"id": 6, "numeracao": 106, "status": "Reservado"},
+    {"id": 7, "numeracao": 107, "status": "Hospede na casa"},
+    {"id": 8, "numeracao": 108, "status": "Livre e limpa"},
+    {"id": 9, "numeracao": 109, "status": "Indisponível"},
+    {"id": 10, "numeracao": 110, "status": "Livre e limpa"},
+]
+_MOCK_PROXIMO_ID_ESTADIA = [1]
+
+
+def _mock_listar_uh():
+    """Formato igual ao esperado de controls.control_uh.ListarUH():
+    lista de tuplas (id, numeracao, status, vista_mar, vista_rua, acessivel).
+    """
+    return [
+        (u["id"], u["numeracao"], u["status"], 0, 0, 0)
+        for u in _MOCK_UHS
+    ]
+
+
+def _mock_atualizar_status_uh(numeracao, novo_status):
+    for u in _MOCK_UHS:
+        if u["numeracao"] == numeracao:
+            u["status"] = novo_status
+            return True, f"Unidade Habitacional Nº{numeracao} atualizada para {novo_status}."
+    return False, "Unidade não encontrada."
+
+
+def _mock_cadastrar_estadia(nome_hospede, cpf_hospede, id_uh, qt_pessoas):
+    for u in _MOCK_UHS:
+        if u["id"] == id_uh:
+            u["status"] = "Hospede na casa"
+            id_estadia = _MOCK_PROXIMO_ID_ESTADIA[0]
+            _MOCK_PROXIMO_ID_ESTADIA[0] += 1
+            return True, f"[MOCK] Check-in de {nome_hospede} registrado (estadia #{id_estadia})."
+    return False, "Unidade não encontrada."
+
+
+def _mock_fazer_checkout(numeracao):
+    for u in _MOCK_UHS:
+        if u["numeracao"] == numeracao:
+            u["status"] = "Em limpeza"
+            return True, f"[MOCK] Check-out do quarto {numeracao} registrado (foi para limpeza)."
+    return False, "Unidade não encontrada."
+
+
+# ----------------------------------------------------------------------
+# Funções de dados usadas pela tela — tentam o control real primeiro,
+# caem pro mock automaticamente.
 # ----------------------------------------------------------------------
 def _carregar_quartos():
-    """Devolve a lista de quartos a mostrar na grade (até 10).
-
-    Cada item: {"numero": int, "status": "disponivel"|"ocupado"|"indisponivel", "id": int|None}
-    Usa o banco real (model_apto) quando disponível; cai para um mock de
-    10 quartos (1 a 10) se o banco ainda estiver vazio/inacessível.
-    """
-    quartos = []
-    try:
-        dados_banco = listar_aptos(somente_vagos=False)
-    except Exception:
-        dados_banco = []
-
-    if dados_banco:
-        # (id, tipo, numeracao, vago, preco_pessoa, limite_pessoa, ...)
-        for linha in dados_banco:
-            id_apto, _tipo, numeracao, vago = linha[0], linha[1], linha[2], linha[3]
-            if numeracao in QUARTOS_INDISPONIVEIS_MOCK:
-                status = "indisponivel"
-            else:
-                status = "disponivel" if vago else "ocupado"
-            quartos.append({"numero": numeracao, "status": status, "id": id_apto})
-        quartos.sort(key=lambda q: q["numero"])
+    """Devolve até 10 quartos: [{"numero", "status_real", "grupo", "id"}, ...]."""
+    if _TEM_CONTROL_UH:
+        try:
+            linhas = ListarUH()
+        except Exception:
+            linhas = _mock_listar_uh()
     else:
-        # Banco vazio: 10 quartos de exemplo, só para a tela não ficar em branco.
-        for numero in range(1, 11):
-            if numero in QUARTOS_INDISPONIVEIS_MOCK:
-                status = "indisponivel"
-            elif numero in (2, 7):
-                status = "ocupado"
-            else:
-                status = "disponivel"
-            quartos.append({"numero": numero, "status": status, "id": None})
+        linhas = _mock_listar_uh()
 
+    quartos = []
+    for linha in linhas:
+        id_uh, numeracao, status_real = linha[0], linha[1], linha[2]
+        grupo = STATUS_REAL_PARA_GRUPO.get(status_real, "indisponivel")
+        quartos.append({
+            "id": id_uh, "numero": numeracao,
+            "status_real": status_real, "grupo": grupo,
+        })
+    quartos.sort(key=lambda q: q["numero"])
     return quartos[:10]
 
 
 def _status_dias_do_mes(quarto, ano, mes):
-    """Devolve {dia: "disponivel"|"ocupado"|"indisponivel"} para cada dia do mês
-    exibido no calendário, considerando o status do quarto selecionado.
+    """Status (grupo de cor) de cada dia do mês para o quarto selecionado.
+
+    MOCK/simplificado: como o banco não guarda mais disponibilidade por
+    data futura (ver nota no topo do arquivo), pintamos o mês inteiro com
+    o status ATUAL do quarto. Troque aqui quando houver uma fonte real de
+    disponibilidade dia a dia.
     """
     qtd_dias = calendar.monthrange(ano, mes)[1]
-
-    # Indisponível (mock): enquanto não há datas reais de manutenção/limpeza,
-    # consideramos o mês inteiro indisponível para esse quarto.
-    if quarto["status"] == "indisponivel":
-        return {dia: "indisponivel" for dia in range(1, qtd_dias + 1)}
-
-    status_por_dia = {dia: "disponivel" for dia in range(1, qtd_dias + 1)}
-
-    if quarto["id"] is None:
-        # Sem id real (modo mock) -> não há como cruzar com Reservas.
-        return status_por_dia
-
-    try:
-        reservas = listar_db_reservas()
-    except Exception:
-        reservas = []
-
-    # Linhas de Reservas: (id, id_cliente, id_apto, data_entrada, data_saida,
-    #                      qt_pessoas, valor, status, checkin_feito)
-    for r in reservas:
-        if len(r) < 8:
-            continue
-        id_apto_reserva, data_entrada, data_saida, status_reserva = r[2], r[3], r[4], r[7]
-        if id_apto_reserva != quarto["id"] or status_reserva == "cancelado":
-            continue
-        try:
-            entrada = datetime.strptime(data_entrada, "%Y-%m-%d").date()
-            saida = datetime.strptime(data_saida, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-
-        dia_cursor = date(ano, mes, 1)
-        for dia in range(1, qtd_dias + 1):
-            dia_cursor = date(ano, mes, dia)
-            if entrada <= dia_cursor < saida:
-                status_por_dia[dia] = "ocupado"
-
-    return status_por_dia
+    return {dia: quarto["grupo"] for dia in range(1, qtd_dias + 1)}
 
 
 # ----------------------------------------------------------------------
-# POPUP DE CALENDÁRIO PARA ESCOLHER UMA DATA (usado no diálogo de Nova Reserva)
+# POPUP DE CALENDÁRIO (navegação visual, sem seleção de data específica
+# — aqui só serve pra mostrar o status por dia do quarto selecionado)
 # ----------------------------------------------------------------------
 class PopupCalendario(ctk.CTkToplevel):
-    """Janelinha modal com calendário interativo para seleção de UMA data."""
-
     MESES = [
         "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     ]
-    DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-
-    def __init__(self, master, data_inicial=None, ao_selecionar=None):
-        super().__init__(master)
-        self.ao_selecionar = ao_selecionar
-
-        if data_inicial:
-            try:
-                dt = datetime.strptime(data_inicial, "%d/%m/%Y").date()
-                self.ano_atual = dt.year
-                self.mes_atual = dt.month
-                self.dia_selecionado = dt.day
-            except Exception:
-                hoje = date.today()
-                self.ano_atual = hoje.year
-                self.mes_atual = hoje.month
-                self.dia_selecionado = hoje.day
-        else:
-            hoje = date.today()
-            self.ano_atual = hoje.year
-            self.mes_atual = hoje.month
-            self.dia_selecionado = hoje.day
-
-        self.title("Selecionar Data")
-        centralizar_janela(self, 310, 330)
-        self.resizable(False, False)
-        self.configure(fg_color="white")
-
-        if master is not None and master.winfo_viewable():
-            self.transient(master)
-
-        self._criar_ui()
-        self.after(100, self._centralizar_e_focar)
-
-    def _centralizar_e_focar(self):
-        self.lift()
-        self.focus_force()
-        self.grab_set()
-
-    def _criar_ui(self):
-        nav = ctk.CTkFrame(self, fg_color=AZUL_CABECALHO, corner_radius=0, height=44)
-        nav.pack(fill="x")
-        nav.pack_propagate(False)
-
-        ctk.CTkButton(
-            nav, text="◀", width=32, height=32,
-            fg_color="transparent", hover_color=AZUL_HOVER,
-            font=(FONTE, 12, "bold"), command=self._mes_anterior
-        ).pack(side="left", padx=8)
-
-        self.lbl_mes_ano = ctk.CTkLabel(
-            nav, text="", font=ctk.CTkFont(family=FONTE, size=14, weight="bold"),
-            text_color="white"
-        )
-        self.lbl_mes_ano.pack(side="left", expand=True)
-
-        ctk.CTkButton(
-            nav, text="▶", width=32, height=32,
-            fg_color="transparent", hover_color=AZUL_HOVER,
-            font=(FONTE, 12, "bold"), command=self._mes_proximo
-        ).pack(side="right", padx=8)
-
-        semana = ctk.CTkFrame(self, fg_color="#F1F5F9", height=28, corner_radius=0)
-        semana.pack(fill="x")
-        for i, d in enumerate(self.DIAS_SEMANA):
-            ctk.CTkLabel(
-                semana, text=d, font=(FONTE, 11, "bold"),
-                text_color=AZUL_ESCURO if i < 5 else LARANJA, width=42
-            ).pack(side="left")
-
-        self.frame_dias = ctk.CTkFrame(self, fg_color="white", corner_radius=0)
-        self.frame_dias.pack(fill="both", expand=True, padx=8, pady=8)
-
-        self._desenhar_dias()
-
-    def _desenhar_dias(self):
-        for w in self.frame_dias.winfo_children():
-            w.destroy()
-
-        self.lbl_mes_ano.configure(text=f"{self.MESES[self.mes_atual]} {self.ano_atual}")
-
-        cal = calendar.monthcalendar(self.ano_atual, self.mes_atual)
-        hoje = date.today()
-
-        for r, sem in enumerate(cal):
-            for c, dia in enumerate(sem):
-                if dia == 0:
-                    ctk.CTkLabel(self.frame_dias, text="", width=36, height=30).grid(
-                        row=r, column=c, padx=2, pady=2)
-                else:
-                    e_selecionado = (dia == self.dia_selecionado)
-                    e_hoje = (
-                        dia == hoje.day and self.mes_atual == hoje.month
-                        and self.ano_atual == hoje.year
-                    )
-                    fg = LARANJA if e_selecionado else ("#E2E8F0" if e_hoje else "transparent")
-                    tc = "white" if e_selecionado else AZUL_ESCURO
-
-                    ctk.CTkButton(
-                        self.frame_dias, text=str(dia), width=36, height=30,
-                        corner_radius=6, fg_color=fg,
-                        hover_color=LARANJA_HOVER if e_selecionado else "#E2E8F0",
-                        text_color=tc,
-                        font=ctk.CTkFont(family=FONTE, size=12,
-                                          weight="bold" if (e_selecionado or e_hoje) else "normal"),
-                        command=lambda d=dia: self._escolher_dia(d)
-                    ).grid(row=r, column=c, padx=2, pady=2)
-
-    def _mes_anterior(self):
-        if self.mes_atual == 1:
-            self.mes_atual = 12
-            self.ano_atual -= 1
-        else:
-            self.mes_atual -= 1
-        self._desenhar_dias()
-
-    def _mes_proximo(self):
-        if self.mes_atual == 12:
-            self.mes_atual = 1
-            self.ano_atual += 1
-        else:
-            self.mes_atual += 1
-        self._desenhar_dias()
-
-    def _escolher_dia(self, dia):
-        data_escolhida = f"{dia:02d}/{self.mes_atual:02d}/{self.ano_atual}"
-        if self.ao_selecionar:
-            self.ao_selecionar(data_escolhida)
-        self.destroy()
 
 
 # ----------------------------------------------------------------------
-# DIÁLOGO: NOVA RESERVA (datas + qtd pessoas) para o quarto selecionado
+# DIÁLOGO: FAZER CHECK-IN no quarto selecionado
 # ----------------------------------------------------------------------
-class DialogoNovaReserva(ctk.CTkToplevel):
+class DialogoCheckin(ctk.CTkToplevel):
     def __init__(self, master, quarto, ao_confirmar):
         super().__init__(master)
         self.quarto = quarto
         self.ao_confirmar = ao_confirmar
 
-        self.title("Nova Reserva")
-        centralizar_janela(self, 340, 360)
+        self.title("Fazer Check-in")
+        centralizar_janela(self, 340, 320)
         self.resizable(False, False)
         self.configure(fg_color="white")
         if master is not None and master.winfo_viewable():
@@ -316,26 +250,31 @@ class DialogoNovaReserva(ctk.CTkToplevel):
         barra.pack(fill="x")
         barra.pack_propagate(False)
         ctk.CTkLabel(
-            barra, text=f"Nova Reserva — Quarto {quarto['numero']}",
+            barra, text=f"Check-in — Quarto {quarto['numero']}",
             font=ctk.CTkFont(family=FONTE, size=14, weight="bold"), text_color="white"
         ).pack(side="left", padx=14)
 
         corpo = ctk.CTkFrame(self, fg_color="white")
         corpo.pack(fill="both", expand=True, padx=16, pady=14)
 
-        hoje_str = date.today().strftime("%d/%m/%Y")
-        saida_str = (date.today() + timedelta(days=1)).strftime("%d/%m/%Y")
-
-        ctk.CTkLabel(corpo, text="Data de Entrada:", font=(FONTE, 12, "bold"),
+        ctk.CTkLabel(corpo, text="Nome do Hóspede:", font=(FONTE, 12, "bold"),
                      text_color=AZUL_ESCURO).pack(anchor="w", pady=(0, 2))
-        self.entry_entrada = self._campo_data(corpo, hoje_str)
+        self.entry_nome = ctk.CTkEntry(
+            corpo, font=ctk.CTkFont(family=FONTE, size=13),
+            fg_color="white", border_width=1, border_color=BORDA_CAMPO, height=36
+        )
+        self.entry_nome.pack(fill="x", pady=(0, 10))
 
-        ctk.CTkLabel(corpo, text="Data de Saída:", font=(FONTE, 12, "bold"),
-                     text_color=AZUL_ESCURO).pack(anchor="w", pady=(10, 2))
-        self.entry_saida = self._campo_data(corpo, saida_str)
+        ctk.CTkLabel(corpo, text="CPF:", font=(FONTE, 12, "bold"),
+                     text_color=AZUL_ESCURO).pack(anchor="w", pady=(0, 2))
+        self.entry_cpf = ctk.CTkEntry(
+            corpo, font=ctk.CTkFont(family=FONTE, size=13),
+            fg_color="white", border_width=1, border_color=BORDA_CAMPO, height=36
+        )
+        self.entry_cpf.pack(fill="x", pady=(0, 10))
 
         ctk.CTkLabel(corpo, text="Quantidade de Pessoas:", font=(FONTE, 12, "bold"),
-                     text_color=AZUL_ESCURO).pack(anchor="w", pady=(10, 2))
+                     text_color=AZUL_ESCURO).pack(anchor="w", pady=(0, 2))
         self.entry_qt_pessoas = ctk.CTkEntry(
             corpo, font=ctk.CTkFont(family=FONTE, size=14, weight="bold"),
             fg_color="white", border_width=1, border_color=BORDA_CAMPO,
@@ -345,7 +284,7 @@ class DialogoNovaReserva(ctk.CTkToplevel):
         self.entry_qt_pessoas.pack(fill="x", pady=(0, 10))
 
         ctk.CTkButton(
-            corpo, text="Confirmar Reserva", font=(FONTE, 13, "bold"),
+            corpo, text="Confirmar Check-in", font=(FONTE, 13, "bold"),
             fg_color=LARANJA, hover_color=LARANJA_HOVER, text_color="white",
             corner_radius=8, height=42, command=self._confirmar
         ).pack(fill="x", pady=(10, 0))
@@ -355,51 +294,27 @@ class DialogoNovaReserva(ctk.CTkToplevel):
         self.focus_force()
         self.grab_set()
 
-    def _campo_data(self, master, valor_inicial):
-        moldura = ctk.CTkFrame(master, fg_color="white", corner_radius=8,
-                                border_width=1, border_color=BORDA_CAMPO, height=38)
-        moldura.pack(fill="x", pady=(0, 4))
-        moldura.pack_propagate(False)
-
-        entry = ctk.CTkEntry(moldura, font=ctk.CTkFont(family=FONTE, size=13, weight="bold"),
-                              fg_color="white", border_width=0, text_color=AZUL_ESCURO)
-        entry.insert(0, valor_inicial)
-        entry.pack(side="left", fill="both", expand=True, padx=(10, 4), pady=3)
-
-        ctk.CTkButton(
-            moldura, text="📅", width=28, height=28, fg_color="transparent",
-            hover_color="#E2E8F0", cursor="hand2", font=(FONTE, 14), text_color=AZUL_ESCURO,
-            command=lambda e=entry: self._abrir_seletor(e)
-        ).pack(side="right", padx=(0, 6), pady=3)
-        return entry
-
-    def _abrir_seletor(self, entry_alvo):
-        def atualizar(data_formatada):
-            entry_alvo.delete(0, "end")
-            entry_alvo.insert(0, data_formatada)
-        PopupCalendario(self, data_inicial=entry_alvo.get().strip(), ao_selecionar=atualizar)
-
     def _confirmar(self):
         self.ao_confirmar(
-            self.entry_entrada.get().strip(),
-            self.entry_saida.get().strip(),
+            self.entry_nome.get().strip(),
+            self.entry_cpf.get().strip(),
             self.entry_qt_pessoas.get().strip(),
         )
         self.destroy()
 
 
 # ----------------------------------------------------------------------
-# TELA DE RESERVAS (mapa de quartos + calendário de status)
+# TELA DE RESERVAS (mapa de quartos por status + calendário)
 # ----------------------------------------------------------------------
 class TelaReservas(TelaBase):
-    """Tela de consulta de disponibilidade e reserva de quartos."""
+    """Tela de consulta de disponibilidade e check-in/check-out de quartos."""
 
     def __init__(self, master, app=None, **kwargs):
         super().__init__(master, app, **kwargs)
         self.numero_filtro = getattr(app, "apartamento_selecionado", None)
         if app is not None:
-            app.apartamento_selecionado = None  
-        # Referências de imagens para evitar garbage collection do Tkinter
+            app.apartamento_selecionado = None
+
         self._imagens_cache = []
         self.quartos = []
         self.cards_quartos = {}
@@ -480,157 +395,24 @@ class TelaReservas(TelaBase):
         barra_tit.pack(fill="x")
         barra_tit.pack_propagate(False)
 
-        ctk.CTkLabel(
-            barra_tit, text="Filtros de Busca",
-            font=ctk.CTkFont(family=FONTE, size=14, weight="bold"),
-            text_color="white"
-        ).pack(side="left", padx=14)
-
-        conteudo = ctk.CTkFrame(card_filtros, fg_color="transparent")
-        conteudo.pack(fill="both", expand=True, padx=14, pady=10)
-
-        # 1. Data de Entrada
-        ctk.CTkLabel(
-            conteudo, text="Data de Entrada:",
-            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
-            text_color=AZUL_ESCURO
-        ).pack(anchor="w", pady=(4, 2))
-
-        hoje_str = date.today().strftime("%d/%m/%Y")
-        saida_str = (date.today() + timedelta(days=3)).strftime("%d/%m/%Y")
-
-        self.entry_entrada = self._criar_campo_data(conteudo, hoje_str)
-
-        # 2. Data de Saída
-        ctk.CTkLabel(
-            conteudo, text="Data de Saída:",
-            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
-            text_color=AZUL_ESCURO
-        ).pack(anchor="w", pady=(10, 2))
-
-        self.entry_saida = self._criar_campo_data(conteudo, saida_str)
-
-        # 3. Tipo de Apartamento
-        ctk.CTkLabel(
-            conteudo, text="Tipo de Apartamento:",
-            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
-            text_color=AZUL_ESCURO
-        ).pack(anchor="w", pady=(10, 2))
-
-        self.combo_tipo = ctk.CTkComboBox(
-            conteudo,
-            values=["Todos", "Standard", "Duplo", "Luxo", "Super Luxo", "Presidencial"],
-            font=ctk.CTkFont(family=FONTE, size=13),
-            dropdown_font=ctk.CTkFont(family=FONTE, size=13),
-            fg_color="white",
-            border_color=BORDA_CAMPO,
-            border_width=1,
-            corner_radius=8,
-            button_color="#E2E7F0",
-            button_hover_color="#CBD5E1",
-            text_color="#1E293B",
-            height=38
+        self.lbl_titulo_quartos = ctk.CTkLabel(
+            barra_tit, text="Quartos (0)",
+            font=ctk.CTkFont(family=FONTE, size=14, weight="bold"), text_color="white"
         )
-        self.combo_tipo.pack(fill="x", pady=(0, 16))
-        self.combo_tipo.set("Todos")
-        
-        ctk.CTkLabel(
-            conteudo, text="Quantidade de pessoas:",
-            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
-            text_color=AZUL_ESCURO
-        ).pack(anchor="w", pady=(10, 2))
-        
-        self.combo_qt_pessoas = ctk.CTkComboBox(
-            conteudo,
-            values=["1", "2", "3", "4", "5", "6"],
-            font=ctk.CTkFont(family=FONTE, size=13),
-            dropdown_font=ctk.CTkFont(family=FONTE, size=13),
-            fg_color="white",
-            border_color=BORDA_CAMPO,
-            border_width=1,
-            corner_radius=8,
-            button_color="#E2E7F0",
-            button_hover_color="#CBD5E1",
-            text_color="#1E293B",
-            height=38
-        )
-        self.combo_qt_pessoas.pack(fill="x", pady=(0, 5))
-        self.combo_qt_pessoas.set("1")
-        
-        # 4. Botão Buscar Disponibilidade (Laranja com Lupa)
-        # >>> IMAGEM: coloque 'icone_lupa.png' (18x18) em views/assets/ <<<
-        img_lupa = carregar_imagem("icone_lupa.png", (18, 18))
-        self.btn_buscar = ctk.CTkButton(
-            conteudo,
-            text=" Buscar Disponibilidade",
-            image=img_lupa,
-            compound="left",
-            font=ctk.CTkFont(family=FONTE, size=13, weight="bold"),
-            fg_color=LARANJA,
-            hover_color=LARANJA_HOVER,
-            text_color="white",
-            corner_radius=8,
-            height=42,
-            command=self.ao_clicar_buscar
-        )
-        if not img_lupa:
-            self.btn_buscar.configure(text="🔍  Buscar Disponibilidade")
-        self.btn_buscar.pack(fill="x", pady=(10, 0))
+        self.lbl_titulo_quartos.pack(side="left", padx=14)
 
-    def _criar_campo_data(self, master, valor_inicial):
-        moldura = ctk.CTkFrame(
-            master, fg_color="white", corner_radius=8,
-            border_width=1, border_color=BORDA_CAMPO, height=38
-        )
-        moldura.pack(fill="x", pady=(0, 4))
-        moldura.pack_propagate(False)
-
-        entry = ctk.CTkEntry(
-            moldura,
-            font=ctk.CTkFont(family=FONTE, size=13, weight="bold"),
-            fg_color="white",
-            border_width=0,
-            text_color=AZUL_ESCURO,
-        )
-        entry.insert(0, valor_inicial)
-        entry.pack(side="left", fill="both", expand=True, padx=(10, 4), pady=3)
-
-        # Botão com o ícone do calendário para abrir o popup seletor de data
-        # >>> IMAGEM: 'icone_calendario_campo.png' (18x18) em views/assets/ <<<
-        img_cal = carregar_imagem("icone_calendario_campo.png", (18, 18))
-        if img_cal:
-            self._imagens_cache.append(img_cal)
-            btn_cal = ctk.CTkButton(
-                moldura, text="", image=img_cal, width=28, height=28,
-                fg_color="transparent", hover_color="#E2E8F0", cursor="hand2",
-                command=lambda e=entry: self._abrir_seletor_data(e)
-            )
-        else:
-            btn_cal = ctk.CTkButton(
-                moldura, text="📅", width=28, height=28,
-                fg_color="transparent", hover_color="#E2E8F0", cursor="hand2",
-                font=(FONTE, 14), text_color=AZUL_ESCURO,
-                command=lambda e=entry: self._abrir_seletor_data(e)
-            )
-        btn_cal.pack(side="right", padx=(0, 6), pady=3)
-        return entry
-
-    def _abrir_seletor_data(self, entry_alvo):
-        """Abre o popup do calendário e atualiza o campo ao selecionar o dia."""
-        def atualizar(data_formatada):
-            entry_alvo.delete(0, "end")
-            entry_alvo.insert(0, data_formatada)
-
-        data_atual = entry_alvo.get().strip()
-        PopupCalendario(self, data_inicial=data_atual, ao_selecionar=atualizar)
+        self.grade_quartos = ctk.CTkFrame(self.card_quartos, fg_color="transparent")
+        self.grade_quartos.pack(fill="both", expand=True, padx=12, pady=12)
+        for col in range(5):
+            self.grade_quartos.grid_columnconfigure(col, weight=1, uniform="q")
 
     # --- PAINEL DIREITO: CALENDÁRIO --------------------------------------
     def _criar_painel_calendario(self, master):
         self.card_calendario = ctk.CTkFrame(
-            master, width=300, fg_color="white", corner_radius=12,
+            master, width=340, height=460, fg_color="white", corner_radius=12,
             border_width=1, border_color=BORDA_CARD
         )
-        self.card_calendario.pack(side="left", fill="y")
+        self.card_calendario.pack(side="left", anchor="n")
         self.card_calendario.pack_propagate(False)
 
         barra_tit = ctk.CTkFrame(self.card_calendario, height=40, fg_color=AZUL_CABECALHO, corner_radius=12)
@@ -640,17 +422,17 @@ class TelaReservas(TelaBase):
             barra_tit, text="Calendário",
             font=ctk.CTkFont(family=FONTE, size=14, weight="bold"), text_color="white"
         ).pack(side="left", padx=14)
-        
-        self.btn_ver_todos = ctk.CTkButton(
-            barra_tit, text="Ver todos", width=90, height=28,
-            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
-            fg_color=LARANJA, hover_color=LARANJA_HOVER, text_color="white",
-            command=self.ao_clicar_ver_todos
-        )
 
-        # Container scrollável para acomodar os cards de apartamentos lado a lado
-        self.container_cards = ctk.CTkScrollableFrame(
-            self.card_aptos, fg_color="transparent", orientation="horizontal"
+        nav = ctk.CTkFrame(self.card_calendario, fg_color="transparent")
+        nav.pack(fill="x", padx=12, pady=(10, 4))
+        ctk.CTkButton(
+            nav, text="◀", width=28, height=28, fg_color="transparent",
+            hover_color="#E2E8F0", text_color=AZUL_ESCURO,
+            font=(FONTE, 12, "bold"), command=self._mes_anterior
+        ).pack(side="left")
+
+        self.lbl_mes_ano = ctk.CTkLabel(
+            nav, text="", font=ctk.CTkFont(family=FONTE, size=14, weight="bold"), text_color=AZUL_ESCURO
         )
         self.lbl_mes_ano.pack(side="left", expand=True)
 
@@ -673,7 +455,7 @@ class TelaReservas(TelaBase):
         for col in range(7):
             self.grade_dias.grid_columnconfigure(col, weight=1, uniform="d")
 
-    # --- RODAPÉ: info + botão Nova Reserva -------------------------------
+    # --- RODAPÉ: info + botão de ação -----------------------------------
     def _criar_rodape(self):
         rodape = ctk.CTkFrame(self, fg_color="#EAF1FB", corner_radius=10)
         rodape.pack(fill="x", padx=25, pady=(0, 18))
@@ -682,17 +464,17 @@ class TelaReservas(TelaBase):
         conteudo.pack(fill="x", padx=14, pady=10)
 
         self.lbl_info_rodape = ctk.CTkLabel(
-            conteudo, text="ℹ️  Selecione um quarto para visualizar o calendário e realizar a reserva.",
+            conteudo, text="ℹ️  Selecione um quarto para visualizar o status e realizar o check-in.",
             font=(FONTE, 12), text_color=AZUL_ESCURO, anchor="w"
         )
         self.lbl_info_rodape.pack(side="left", fill="x", expand=True)
 
-        self.btn_nova_reserva = ctk.CTkButton(
-            conteudo, text="📅  Nova Reserva", font=(FONTE, 13, "bold"),
+        self.btn_acao = ctk.CTkButton(
+            conteudo, text="✔  Fazer Check-in", font=(FONTE, 13, "bold"),
             fg_color=AZUL_CABECALHO, hover_color=AZUL_HOVER, text_color="white",
-            corner_radius=8, height=36, state="disabled", command=self.ao_clicar_nova_reserva
+            corner_radius=8, height=36, state="disabled", command=self.ao_clicar_acao
         )
-        self.btn_nova_reserva.pack(side="right")
+        self.btn_acao.pack(side="right")
 
     # ------------------------------------------------------------------
     # CARREGAR / DESENHAR DADOS
@@ -721,7 +503,7 @@ class TelaReservas(TelaBase):
             self.cards_quartos[quarto["numero"]] = card
 
     def _criar_card_quarto(self, master, quarto):
-        cor, _cor_clara, rotulo = STATUS_CORES[quarto["status"]]
+        cor, _cor_clara, rotulo = STATUS_CORES[quarto["grupo"]]
         selecionado = self.quarto_selecionado is not None and self.quarto_selecionado["numero"] == quarto["numero"]
 
         card = ctk.CTkFrame(
@@ -753,13 +535,15 @@ class TelaReservas(TelaBase):
         lbl_foto.pack(fill="x", padx=8, pady=2)
 
         rodape_card = ctk.CTkFrame(card, fg_color="transparent")
-        rodape_card.pack(fill="x", padx=8, pady=(4, 8))
+        rodape_card.pack(fill="x", padx=8, pady=(4, 2))
         ctk.CTkFrame(rodape_card, width=10, height=10, corner_radius=5, fg_color=cor).pack(side="left")
         ctk.CTkLabel(rodape_card, text=rotulo, font=(FONTE, 11), text_color=TEXTO_CINZA).pack(
             side="left", padx=(6, 0))
 
-        # Qualquer quarto pode ser selecionado para consulta; só os
-        # disponíveis permitem reservar (ver _atualizar_rodape).
+        ctk.CTkLabel(
+            card, text=quarto["status_real"], font=(FONTE, 9), text_color="#8A93A6"
+        ).pack(fill="x", padx=8, pady=(0, 6))
+
         for widget in (card, topo, lbl_foto, rodape_card):
             widget.bind("<Button-1>", lambda e, q=quarto: self._selecionar_quarto(q))
         return card
@@ -782,7 +566,7 @@ class TelaReservas(TelaBase):
         if self.quarto_selecionado is not None:
             status_por_dia = _status_dias_do_mes(self.quarto_selecionado, self.cal_ano, self.cal_mes)
 
-        # calendar.Calendar com firstweekday=6 -> semana começa no Domingo (como no print)
+        # firstweekday=6 -> semana começa no Domingo (como no protótipo)
         cal = calendar.Calendar(firstweekday=6)
         semanas = cal.monthdayscalendar(self.cal_ano, self.cal_mes)
 
@@ -793,19 +577,17 @@ class TelaReservas(TelaBase):
                         row=r, column=c, padx=2, pady=2)
                     continue
 
-                status_dia = status_por_dia.get(dia)
-                if status_dia:
-                    cor_forte, cor_clara, _rotulo = STATUS_CORES[status_dia]
-                    fg = cor_clara
-                    tc = cor_forte
+                grupo_dia = status_por_dia.get(dia)
+                if grupo_dia:
+                    cor_forte, cor_clara, _rotulo = STATUS_CORES[grupo_dia]
+                    fg, tc = cor_clara, cor_forte
                 else:
-                    fg = "transparent"
-                    tc = AZUL_ESCURO
+                    fg, tc = "transparent", AZUL_ESCURO
 
                 ctk.CTkLabel(
                     self.grade_dias, text=str(dia), width=34, height=30,
                     corner_radius=6, fg_color=fg, text_color=tc,
-                    font=ctk.CTkFont(family=FONTE, size=12, weight="bold" if status_dia else "normal"),
+                    font=ctk.CTkFont(family=FONTE, size=12, weight="bold" if grupo_dia else "normal"),
                 ).grid(row=r, column=c, padx=2, pady=2)
 
     def _mes_anterior(self):
@@ -827,69 +609,93 @@ class TelaReservas(TelaBase):
     def _atualizar_rodape(self):
         if self.quarto_selecionado is None:
             self.lbl_info_rodape.configure(
-                text="ℹ️  Selecione um quarto para visualizar o calendário e realizar a reserva."
+                text="ℹ️  Selecione um quarto para visualizar o status e realizar o check-in."
             )
-            self.btn_nova_reserva.configure(state="disabled")
+            self.btn_acao.configure(state="disabled")
             return
 
         quarto = self.quarto_selecionado
-        _cor, _cor_clara, rotulo = STATUS_CORES[quarto["status"]]
-        if quarto["status"] == "disponivel":
+        _cor, _cor_clara, rotulo = STATUS_CORES[quarto["grupo"]]
+
+        if quarto["grupo"] == "disponivel":
             self.lbl_info_rodape.configure(
-                text=f"ℹ️  Quarto {quarto['numero']} selecionado — {rotulo}. Escolha as datas em \"Nova Reserva\"."
+                text=f"ℹ️  Quarto {quarto['numero']} selecionado — {quarto['status_real']}. "
+                     f"Pronto para check-in."
             )
-            self.btn_nova_reserva.configure(state="normal")
+            self.btn_acao.configure(text="✔  Fazer Check-in", state="normal")
+        elif quarto["status_real"] == "Hospede na casa":
+            self.lbl_info_rodape.configure(
+                text=f"ℹ️  Quarto {quarto['numero']} está com hóspede. Pode registrar o check-out."
+            )
+            self.btn_acao.configure(text="🚪  Fazer Check-out", state="normal")
         else:
             self.lbl_info_rodape.configure(
-                text=f"ℹ️  Quarto {quarto['numero']} está {rotulo.lower()} e não pode ser reservado agora."
+                text=f"ℹ️  Quarto {quarto['numero']} está {rotulo.lower()} ({quarto['status_real']}) "
+                     f"e não está disponível para check-in agora."
             )
-            self.btn_nova_reserva.configure(state="disabled")
+            self.btn_acao.configure(state="disabled")
 
     # ------------------------------------------------------------------
-    # AÇÃO: Nova Reserva
+    # AÇÃO: Check-in / Check-out
     # ------------------------------------------------------------------
-    def ao_clicar_nova_reserva(self):
-        if self.quarto_selecionado is None or self.quarto_selecionado["status"] != "disponivel":
+    def ao_clicar_acao(self):
+        quarto = self.quarto_selecionado
+        if quarto is None:
             return
-        DialogoNovaReserva(self, self.quarto_selecionado, self._confirmar_reserva)
 
-    def ao_clicar_ver_todos(self):
-        self.numero_filtro = None
-        self.renderizar_apartamentos(self.combo_tipo.get())
+        if quarto["grupo"] == "disponivel":
+            DialogoCheckin(self, quarto, self._confirmar_checkin)
+        elif quarto["status_real"] == "Hospede na casa":
+            self._confirmar_checkout(quarto)
 
-    def ao_clicar_reservar(self, dados_apto):
-        """Dispara o fluxo de confirmação de reserva."""
-        data_in = self.entry_entrada.get().strip()
-        data_out = self.entry_saida.get().strip()
-        qt_pessoas = self.combo_qt_pessoas.get()
-        
-        conta = carregar_conta(getattr(self.app, "usuario", ""))
-        dados = conta['perfil']
-        # cpf_cliente = simpledialog.askstring(title="Confirme seu CPF", prompt="Confirme o CPF para realizar a reserva.")
-        
-        if dados:
-            Status, dados_cliente = buscar_cliente(dados['cpf'])
-            
-            mensagem = (
-                f"Deseja confirmar a reserva do apartamento {dados_apto['tipo']}"
-                f"(Nº {dados_apto.get('numero', 'S/N')})?\n\n"
-                f"👤 CPF: {dados['cpf']}\n"
-                f"📅 Entrada: {data_in}\n"
-                f"📅 Saída: {data_out}\n"
-                f"💵 Diária: R$ {float(dados_apto['preco'])*int(qt_pessoas):.2f}\n"
+    def _confirmar_checkin(self, nome_hospede, cpf_hospede, qt_pessoas_raw):
+        if not nome_hospede:
+            messagebox.showerror("Dados incompletos", "Informe o nome do hóspede.", parent=self)
+            return
+        try:
+            qt_pessoas = int(qt_pessoas_raw)
+            if qt_pessoas <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                "Quantidade inválida", "Informe uma quantidade de pessoas válida (mínimo 1).", parent=self
             )
-            
-            confirmou = messagebox.askyesno("Confirmar Reserva", mensagem, parent=self)
-            
-            if confirmou:
-                Status, dados_ap = BuscarApto(dados_apto.get('numero'))
-                
-                CadastrarReserva(dados_cliente[0], dados_ap[0], data_in, data_out, qt_pessoas)
-                messagebox.showinfo(
-                    "Reserva Concluída",
-                    f"Reserva para o apartamento {dados_apto['tipo']} realizada com sucesso!",
-                    parent=self
-                )
+            return
+
+        quarto = self.quarto_selecionado
+        if _TEM_CONTROL_ESTADIA:
+            try:
+                sucesso, mensagem = CadastrarEstadia(nome_hospede, cpf_hospede, quarto["id"], qt_pessoas)
+            except Exception as erro:
+                sucesso, mensagem = False, f"Erro ao registrar check-in: {erro}"
+        else:
+            sucesso, mensagem = _mock_cadastrar_estadia(nome_hospede, cpf_hospede, quarto["id"], qt_pessoas)
+
+        if sucesso:
+            messagebox.showinfo("Check-in realizado", mensagem, parent=self)
+            self._carregar_dados()
+        else:
+            messagebox.showerror("Erro no check-in", mensagem, parent=self)
+
+    def _confirmar_checkout(self, quarto):
+        if not messagebox.askyesno(
+            "Confirmar Check-out", f"Confirmar check-out do quarto {quarto['numero']}?", parent=self
+        ):
+            return
+
+        if _TEM_CONTROL_ESTADIA:
+            try:
+                sucesso, mensagem = FazerCheckout(quarto["id"])
+            except Exception as erro:
+                sucesso, mensagem = False, f"Erro ao registrar check-out: {erro}"
+        else:
+            sucesso, mensagem = _mock_fazer_checkout(quarto["numero"])
+
+        if sucesso:
+            messagebox.showinfo("Check-out realizado", mensagem, parent=self)
+            self._carregar_dados()
+        else:
+            messagebox.showerror("Erro no check-out", mensagem, parent=self)
 
 
 # ----------------------------------------------------------------------
@@ -908,5 +714,3 @@ if __name__ == "__main__":
     tela.pack(fill="both", expand=True)
 
     janela.mainloop()
-    
-    # preciso fazer implementar a quantidade de pessoas na view_reserva.py e armazenar em uma variavel
