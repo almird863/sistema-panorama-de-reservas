@@ -16,5 +16,3 @@ apartamentos = [{
 
 # for i in apartamentos:
 #     inserir_uh(i['numeracao'], i['vm'], i['vr'], i['acc'])
-
-inserir_administrador("wall", "123")
