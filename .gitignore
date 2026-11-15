@@ -2,5 +2,5 @@ __pycache__/
 *.pyc
 *.db
 models/
-views/
+controls/
 databank/
