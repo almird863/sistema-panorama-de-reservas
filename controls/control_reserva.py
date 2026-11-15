@@ -1,9 +1,16 @@
-from models.model_estadia import (
-    inserir_db_reserva, 
-    buscar_db_reserva, 
-    listar_db_reservas, 
-    atualizar_db_reserva, 
-    deletar_db_reserva
+from models.model_reserva import (
+    inserir_db_reserva,
+    buscar_db_reserva,
+    listar_db_reservas,
+    atualizar_db_reserva,
+    deletar_db_reserva,
+    # NOVO: check-in / check-out
+    adicionar_coluna_checkin,
+    listar_db_reservas_para_checkin,
+    listar_db_reservas_hospedadas,
+    listar_db_reservas_concluidas,
+    marcar_checkin_db,
+    marcar_checkout_db,
 )
 from models.model_uh import atualizar_db_apto
 
@@ -41,98 +48,44 @@ def CadastrarReserva(id_cliente, id_apto, data_entrada, data_saida, qt_pessoas):
     except Exception as erro:
         return False, f"Erro ao cadastrar reserva: {erro}"
 
-#-------------------------------------------------- ATUALIZAR RESERVA
-def AtualizarReserva(id_reserva, data_entrada, data_saida, qt_pessoas):
+
+# ----------------------------------------------------------------------
+# NOVO: Check-in / Check-out
+# ----------------------------------------------------------------------
+
+def ListarReservasParaCheckin():
+    """Reservas aguardando o hóspede chegar (ainda não fizeram check-in)."""
+    adicionar_coluna_checkin()  # garante que a coluna existe, mesmo em bancos antigos
+    return listar_db_reservas_para_checkin()
+
+
+def ListarReservasHospedadas():
+    """Reservas com o hóspede já no hotel (já fizeram check-in, aguardando check-out)."""
+    return listar_db_reservas_hospedadas()
+
+
+def ListarReservasConcluidas():
+    """Reservas já finalizadas (check-out feito)."""
+    return listar_db_reservas_concluidas()
+
+
+def FazerCheckin(id_reserva):
+    """Marca a chegada do hóspede. Retorna (sucesso: bool, mensagem: str)."""
     try:
-        # validar preenchimento
-        campos = [id_reserva, data_entrada, data_saida, qt_pessoas]
-        
-        if any(campo is None or not str(campo).strip() for campo in campos):
-            return False, "Preencha todos os campos."
-        
-        # conversão
-        id_reserva = int(id_reserva)
-        qt_pessoas = int(qt_pessoas)
-
-
-        if id_reserva <= 0 or qt_pessoas <= 0:
-            return False, "ID da reserva e quantidade de pessoas devem ser positivos."
-        
-        resultado, valor = atualizar_db_reserva(
-            id_reserva, data_entrada, data_saida, qt_pessoas
-        )
-
-        if resultado:
-            return True, f"Reserva atualizada! Valor total: R${valor:.2f}"
-
-        return False, "Não foi possível atualizar a reserva."
-
-    except ValueError as erro:
-        return False, str(erro)
+        ok = marcar_checkin_db(id_reserva)
+        if ok:
+            return True, "Check-in realizado com sucesso!"
+        return False, "Não foi possível fazer o check-in (reserva não encontrada ou já processada)."
     except Exception as erro:
-        return False, f"Erro ao atualizar reserva: {erro}."
+        return False, f"Erro ao fazer check-in: {erro}"
 
 
-#-------------------------------------------------- BUSCAR RESERVA
-def BuscarReserva(id_cliente):
+def FazerCheckout(id_reserva):
+    """Marca a saída do hóspede e encerra a reserva. Retorna (sucesso: bool, mensagem: str)."""
     try:
-        # validar preenchimento
-        if id_cliente is None or not str(id_cliente).strip():
-            return False, "Informe o ID do cliente."
-
-        # conversão
-        id_cliente = int(id_cliente)
-
-        if id_cliente <= 0:
-            return False, "O ID do cliente deve ser positivo."
-
-        resultado = buscar_db_reserva(id_cliente)
-
-        if resultado:
-            return True, resultado
-
-        return False, "Nenhuma reserva encontrada."
-
-    except ValueError as erro:
-        return False, str(erro)
+        ok = marcar_checkout_db(id_reserva)
+        if ok:
+            return True, "Check-out realizado com sucesso!"
+        return False, "Não foi possível fazer o check-out (reserva não encontrada ou check-in não feito)."
     except Exception as erro:
-        return False, f"Erro ao buscar reserva: {erro}."
-
-
-#-------------------------------------------------- LISTAR RESERVAS
-def ListarReservas():
-    try:
-        resultado = listar_db_reservas()
-
-        if not resultado:
-            return False, "Nenhuma reserva encontrada."
-
-        return True, resultado
-
-    except ValueError as erro:
-        return False, str(erro)
-    except Exception as erro:
-        return False, f"Erro ao listar reservas: {erro}"
-
-
-#-------------------------------------------------- DELETAR RESERVAS
-def DeletarReserva(id_reserva):
-    try:
-        if id_reserva is None or not str(id_reserva).strip():
-            return False, "Informe o ID da reserva."
-
-        id_reserva = int(id_reserva)
-        
-        if id_reserva <= 0:
-            return False, "O ID da reserva deve ser positivo."
-        
-        resultado = deletar_db_reserva(id_reserva)
-        if resultado:
-            return True, "Reserva deletada com sucesso."
-
-        return False, "Reserva não encontrada."
-
-    except ValueError as erro:
-        return False, str(erro)
-    except Exception as erro:
-        return False, f"Erro ao deletar reserva: {erro}."
+        return False, f"Erro ao fazer check-out: {erro}"

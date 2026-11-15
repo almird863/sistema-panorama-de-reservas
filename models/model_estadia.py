@@ -156,7 +156,7 @@ def atualizar_estadia_status(status, id):
     
     if status in STATUS_PERMITIDO:
         try:
-            cs.execute("UPDATE Estadias SET status = ? WHERE id = ?", (status, id))
+            cs.execute('''UPDATE Estadias SET status = ? WHERE id = ?''', (status, id))
             cx.commit()
 
             return True, "Status atualizado com sucesso."
