@@ -1,7 +1,7 @@
 """
-view_usuarios.py
+view_hospedes.py
 -----------------
-Tela "Hóspede" do Sistema de Reservas - Hotel (menu lateral "Usuários").
+Tela "Hóspede" do Sistema de Reservas - Hotel (menu lateral "Hóspedes").
 
 Layout fiel ao protótipo (uh_hopede_checkin.png):
   - Cabeçalho: ícone + título "Hóspede" + subtítulo + onda decorativa
@@ -34,7 +34,7 @@ segurança + um mock mínimo só para o caso de o import falhar):
         atualizar_telefone/atualizar_email(valor, id) -> (bool, mensagem)
     controls.control_hospede.excluir_hospede(id) -> (bool, mensagem)
 
-Rodar isolado: python -m views.view_usuarios
+Rodar isolado: python -m views.view_hospedes
 """
 
 import customtkinter as ctk
@@ -157,7 +157,7 @@ VERMELHO_HOVER = "#C0302C"
 POR_PAGINA = 6
 
 
-class ViewUsuarios(TelaBase):
+class ViewHospedes(TelaBase):
 
     def __init__(self, master, app=None, **kwargs):
         super().__init__(master, app, **kwargs)
@@ -499,7 +499,7 @@ class ViewUsuarios(TelaBase):
 
 
 # ----------------------------------------------------------------------
-# TESTE ISOLADO: python -m views.view_usuarios
+# TESTE ISOLADO: python -m views.view_hospedes
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     ctk.set_appearance_mode("light")
@@ -509,7 +509,7 @@ if __name__ == "__main__":
     janela.title("Sistema de Reservas - Hotel")
     janela.geometry("980x720")
 
-    tela = ViewUsuarios(janela, app=None)
+    tela = ViewHospedes(janela, app=None)
     tela.pack(fill="both", expand=True)
     tela.ao_exibir()
 

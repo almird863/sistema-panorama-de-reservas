@@ -134,7 +134,7 @@ class JanelaPrincipal(ctk.CTk):
         ("inicio", "Início", "🏠"),
         ("reservas", "Reservas", "📅"),
         ("apartamentos", "Apartamentos", "🏢"),
-        ("usuarios", "Usuários", "👥"),
+        ("hospedes", "Hóspedes", "👥"),
         ("checkinout", "Check-in /\nCheck-out", "✔"),
     ]
 
@@ -224,7 +224,7 @@ class JanelaPrincipal(ctk.CTk):
         self.registrar_tela(
             "apartamentos", lambda: __import__("views.view_apartamentos", fromlist=["TelaApartamentos"]).TelaApartamentos(self.container, self))
         self.registrar_tela(
-            "usuarios", lambda: __import__("views.view_usuarios", fromlist=["ViewUsuarios"]).ViewUsuarios(self.container, self))
+            "hospedes", lambda: __import__("views.view_hospedes", fromlist=["ViewHospedes"]).ViewHospedes(self.container, self))
         self.registrar_tela(
             "checkinout", lambda: __import__("views.view_checkin", fromlist=["TelaCheckin"]).TelaCheckin(self.container, self))
 
