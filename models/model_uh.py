@@ -26,7 +26,7 @@ def listar_uh():
         
         return True, cs.fetchall()
     
-    except sqlite3.Error:
+    except sqlite3.Error as e:
         print(f"Erro ao buscar apartamentos: {e}")
 
         return False, []
