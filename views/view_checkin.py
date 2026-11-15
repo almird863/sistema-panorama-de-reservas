@@ -3,38 +3,40 @@ view_checkin.py
 ----------------
 Tela de Check-in / Check-out do Sistema de Reservas - Hotel.
 
-Segue o mesmo padrão das outras telas do menu principal (TelaBase, dentro
-do container da sidebar), igual TelaInicio, TelaReservas e ViewUsuarios —
-não é uma janela separada.
+Layout fiel ao protótipo:
+  - Cabeçalho: ícone + título/subtítulo + onda decorativa no canto direito
+  - 3 cards de contagem lado a lado (Hóspedes no Hotel / Ocupados / Disponíveis)
+  - Card "Check-ins de Hoje" — cabeçalho azul-escuro + badge verde + tabela
+  - Card "Check-outs de Hoje" — cabeçalho azul-escuro + badge laranja + tabela
+  - Botões de ação: ícone quadrado arredondado (✔ azul / seta laranja)
 
-Mostra:
-  - Card no topo com a PRÓXIMA reserva aguardando check-in (nº da reserva,
-    apartamento, data de check-in) e um botão que alterna entre
-    "Fazer Check-in" e "Fazer Check-out".
-  - Lista abaixo com todas as reservas já concluídas (check-out feito),
-    no mesmo estilo de card usado nas outras telas.
+----------------------------------------------------------------------
+MOCK — mesma estratégia de view_reserva.py
+----------------------------------------------------------------------
+Enquanto controls/control_estadia.py não existir, usa dados em memória.
+Quando o colega criar o control com as assinaturas abaixo, a troca é
+automática (o import no try/except resolve sozinho):
 
-Rodar junto do sistema: a tela é aberta pelo item "Check-in / Check-out"
-da sidebar (ver view_menu_principal.py -> _registrar_telas).
+    controls/control_estadia.py
+        ListarCheckinsDoDia()   -> [(id, nome, numero_uh, data_hora), ...]
+        ListarCheckoutsDoDia()  -> [(id, nome, numero_uh, data_hora), ...]
+        ConfirmarCheckin(id)    -> (bool, mensagem)
+        RealizarCheckout(id)    -> (bool, mensagem)
+        ContarHospedesNoHotel() -> int
+        ContarUHsOcupadas()     -> int
+        ContarUHsDisponiveis()  -> int
 
-Depende de controls/control_reserva.py (ListarReservasParaCheckin,
-ListarReservasConcluidas, FazerCheckin, FazerCheckout) e da coluna
-checkin_feito em models/model_reserva.py.
+Rodar isolado: python -m views.view_checkin
 """
 
-from datetime import datetime
-
+from datetime import date
 import customtkinter as ctk
+from tkinter import messagebox
 
 from views.componentes import (
-    AZUL_ESCURO, AZUL_HOVER, LARANJA, LARANJA_HOVER, FUNDO_DIREITO,
-    BORDA_CAMPO, TEXTO_CINZA, criar_titulo, criar_botao,
-)
-from controls.control_reserva import (
-    ListarReservasParaCheckin,
-    ListarReservasConcluidas,
-    FazerCheckin,
-    FazerCheckout,
+    AZUL_ESCURO, AZUL_HOVER, LARANJA, LARANJA_HOVER,
+    FUNDO_DIREITO, BORDA_CAMPO, TEXTO_CINZA,
+    carregar_imagem, montar_imagem_lateral,
 )
 
 try:
@@ -44,264 +46,440 @@ except ImportError:
         def __init__(self, master, app=None, **kwargs):
             super().__init__(master, fg_color=FUNDO_DIREITO, corner_radius=0, **kwargs)
             self.app = app
-
         def ao_exibir(self):
             pass
 
-FONTE = "Segoe UI"
-MARGEM_LATERAL = 25
+# ----------------------------------------------------------------------
+# Import "otimista" — cai no mock se o control ainda não existir
+# ----------------------------------------------------------------------
+try:
+    from controls.control_estadia import (
+        ListarCheckinsDoDia, ListarCheckoutsDoDia,
+        ConfirmarCheckin, RealizarCheckout,
+        ContarHospedesNoHotel, ContarUHsOcupadas, ContarUHsDisponiveis,
+    )
+    _TEM_CONTROL = True
+except Exception:
+    _TEM_CONTROL = False
 
-# Índices da tupla devolvida por ListarReservasParaCheckin / ListarReservasConcluidas
-# (ver listar_db_reservas_para_checkin / listar_db_reservas_concluidas em model_reserva.py):
-# (id, id_cliente, id_apto, data_entrada, data_saida, qt_pessoas, valor,
-#  status, checkin_feito, numero_apto)
+# ----------------------------------------------------------------------
+# MOCK
+# ----------------------------------------------------------------------
+_HOJE = date.today().strftime("%d/%m/%Y")
 
-
-def _linha_para_dict(linha):
-    (id_reserva, id_cliente, id_apto, data_entrada, data_saida,
-     qt_pessoas, valor, status, checkin_feito, numero_apto) = linha
-    return {
-        "id": id_reserva,
-        "id_cliente": id_cliente,
-        "id_apto": id_apto,
-        "apartamento": numero_apto if numero_apto is not None else f"(ID {id_apto})",
-        "data_entrada": data_entrada,
-        "data_saida": data_saida,
-        "qt_pessoas": qt_pessoas,
-        "valor": valor,
-        "status": status,
-        "checkin_feito": bool(checkin_feito),
-    }
-
-
-def _formatar_data(data_iso):
-    """Converte 'AAAA-MM-DD' para 'DD/MM/AAAA'. Se não conseguir, devolve como veio."""
-    try:
-        return datetime.strptime(data_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
-    except (ValueError, TypeError):
-        return data_iso or "-"
+_MOCK_CHECKINS = [
+    {"id": 1, "hospede": "Carlos Oliveira", "quarto": 101, "data": f"{_HOJE} 09:00"},
+    {"id": 2, "hospede": "Ana Costa",        "quarto": 202, "data": f"{_HOJE} 10:30"},
+    {"id": 3, "hospede": "João Pereira",     "quarto": 301, "data": f"{_HOJE} 11:00"},
+]
+_MOCK_CHECKOUTS = [
+    {"id": 4, "hospede": "Maria Silva Santos", "quarto": 201, "data": f"{_HOJE} 11:30"},
+]
 
 
+def _mock_listar_checkins():
+    return [(r["id"], r["hospede"], r["quarto"], r["data"]) for r in _MOCK_CHECKINS]
+
+def _mock_listar_checkouts():
+    return [(r["id"], r["hospede"], r["quarto"], r["data"]) for r in _MOCK_CHECKOUTS]
+
+def _mock_confirmar(id_):
+    for i, r in enumerate(_MOCK_CHECKINS):
+        if r["id"] == id_:
+            _MOCK_CHECKINS.pop(i)
+            return True, "Check-in confirmado! [MOCK]"
+    return False, "Registro não encontrado. [MOCK]"
+
+def _mock_checkout(id_):
+    for i, r in enumerate(_MOCK_CHECKOUTS):
+        if r["id"] == id_:
+            _MOCK_CHECKOUTS.pop(i)
+            return True, "Check-out realizado! [MOCK]"
+    return False, "Registro não encontrado. [MOCK]"
+
+def _mock_hospedes():    return 12
+def _mock_ocupadas():    return 8
+def _mock_disponiveis(): return 4
+
+# Funções de acesso — real ou mock automaticamente
+def _listar_checkins():
+    if _TEM_CONTROL:
+        try: return ListarCheckinsDoDia()
+        except Exception: pass
+    return _mock_listar_checkins()
+
+def _listar_checkouts():
+    if _TEM_CONTROL:
+        try: return ListarCheckoutsDoDia()
+        except Exception: pass
+    return _mock_listar_checkouts()
+
+def _confirmar_checkin(id_):
+    if _TEM_CONTROL:
+        try: return ConfirmarCheckin(id_)
+        except Exception as e: return False, str(e)
+    return _mock_confirmar(id_)
+
+def _realizar_checkout(id_):
+    if _TEM_CONTROL:
+        try: return RealizarCheckout(id_)
+        except Exception as e: return False, str(e)
+    return _mock_checkout(id_)
+
+def _hospedes():
+    if _TEM_CONTROL:
+        try: return ContarHospedesNoHotel()
+        except Exception: pass
+    return _mock_hospedes()
+
+def _ocupadas():
+    if _TEM_CONTROL:
+        try: return ContarUHsOcupadas()
+        except Exception: pass
+    return _mock_ocupadas()
+
+def _disponiveis():
+    if _TEM_CONTROL:
+        try: return ContarUHsDisponiveis()
+        except Exception: pass
+    return _mock_disponiveis()
+
+# ----------------------------------------------------------------------
+# Constantes visuais
+# ----------------------------------------------------------------------
+FONTE        = "Segoe UI"
+MARGEM       = 20
+VERDE        = "#2E9E5B"
+VERDE_CLARO  = "#E3F3E9"
+LARANJA_CLARO = "#FFF0D6"
+BORDA_CARD   = "#D5DAE6"
+CINZA_HEADER = "#EEF1F7"
+BRANCO       = "#FFFFFF"
+AZUL_BTN     = "#1B3A7A"
+
+
+# ======================================================================
+# TELA
+# ======================================================================
 class TelaCheckin(TelaBase):
-    """Tela de Check-in / Check-out."""
 
     def __init__(self, master, app=None, **kwargs):
         super().__init__(master, app, **kwargs)
-
-        self.fila_pendentes = []   # reservas aguardando check-in, nesta sessão
-        self.reserva_atual = None  # dict da reserva em destaque no card (ou None)
+        self.configure(fg_color=FUNDO_DIREITO)
+        self._img_refs = []   # guarda referências de imagens (evita GC)
 
         self._criar_cabecalho()
-        self._montar_card_reserva()
-        self._montar_lista_concluidas()
+        self._criar_cards_contagem()
+
+        # área rolável para as tabelas
+        self._scroll = ctk.CTkScrollableFrame(
+            self, fg_color="transparent", corner_radius=0
+        )
+        self._scroll.pack(fill="both", expand=True, padx=MARGEM, pady=(0, 10))
+        self._scroll.grid_columnconfigure(0, weight=1)
+
+        self._criar_tabela_secao(
+            parent=self._scroll,
+            titulo="Check-ins de Hoje",
+            cor_badge=VERDE,
+            fg_badge=VERDE_CLARO,
+            col_data="Entrada",
+            attr_badge="lbl_badge_ci",
+            attr_linhas="linhas_ci",
+            texto_btn="✔",
+            cor_btn=AZUL_BTN,
+            hover_btn=AZUL_HOVER,
+            callback=self._on_checkin,
+            row=0,
+        )
+        self._criar_tabela_secao(
+            parent=self._scroll,
+            titulo="Check-outs de Hoje",
+            cor_badge=LARANJA,
+            fg_badge=LARANJA_CLARO,
+            col_data="Saída",
+            attr_badge="lbl_badge_co",
+            attr_linhas="linhas_co",
+            texto_btn="⇥",
+            cor_btn=LARANJA,
+            hover_btn=LARANJA_HOVER,
+            callback=self._on_checkout,
+            row=1,
+        )
 
     def ao_exibir(self):
-        """Chamado toda vez que a tela é exibida pela sidebar: recarrega os dados."""
-        self.atualizar_tudo()
+        self._atualizar()
 
     # ------------------------------------------------------------------
-    # CABEÇALHO (mesmo padrão de ViewUsuarios)
+    # CABEÇALHO — ícone + título + onda decorativa
     # ------------------------------------------------------------------
     def _criar_cabecalho(self):
-        cabecalho = ctk.CTkFrame(self, fg_color="transparent")
-        cabecalho.pack(fill="x", padx=MARGEM_LATERAL, pady=(15, 10))
+        cab = ctk.CTkFrame(self, fg_color=BRANCO, corner_radius=0, height=80)
+        cab.pack(fill="x")
+        cab.pack_propagate(False)
 
-        criar_titulo(cabecalho, "Check-in / Check-out").pack(anchor="w")
+        # onda decorativa no canto direito (mesma usada no menu principal)
+        img_onda = montar_imagem_lateral(220, 80, altura_onda=80)
+        if img_onda is None:
+            # fallback: bloco com gradiente laranja
+            img_onda = carregar_imagem("onda_reserva_superior.png", (220, 80))
+        if img_onda:
+            self._img_refs.append(img_onda)
+            ctk.CTkLabel(cab, text="", image=img_onda).place(relx=1.0, rely=0, anchor="ne")
+
+        # ícone
+        img_ico = carregar_imagem("icone_checkin.png", (42, 42))
+        if img_ico:
+            self._img_refs.append(img_ico)
+            lbl_ico = ctk.CTkLabel(cab, text="", image=img_ico)
+        else:
+            lbl_ico = ctk.CTkLabel(
+                cab, text="🗓",
+                font=ctk.CTkFont(family=FONTE, size=34),
+                text_color=AZUL_ESCURO,
+            )
+        lbl_ico.place(x=20, rely=0.5, anchor="w")
+
+        textos = ctk.CTkFrame(cab, fg_color="transparent")
+        textos.place(x=76, rely=0.5, anchor="w")
 
         ctk.CTkLabel(
-            cabecalho, text="Registre a chegada e a saída dos hóspedes",
-            font=ctk.CTkFont(family=FONTE, size=13),
+            textos,
+            text="Check-in / Check-out",
+            font=ctk.CTkFont(family=FONTE, size=22, weight="bold"),
+            text_color=AZUL_ESCURO,
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            textos,
+            text="Gerencie a entrada e saída dos hóspedes",
+            font=ctk.CTkFont(family=FONTE, size=12),
             text_color=TEXTO_CINZA,
         ).pack(anchor="w")
 
     # ------------------------------------------------------------------
-    # CARREGAMENTO DE DADOS
+    # 3 CARDS DE CONTAGEM
     # ------------------------------------------------------------------
-    def atualizar_tudo(self):
-        """Recarrega a fila de check-in e a lista de concluídas a partir do banco."""
-        linhas = ListarReservasParaCheckin()
-        self.fila_pendentes = [_linha_para_dict(linha) for linha in linhas]
-        self.reserva_atual = self.fila_pendentes.pop(
-            0) if self.fila_pendentes else None
+    def _criar_cards_contagem(self):
+        faixa = ctk.CTkFrame(self, fg_color="transparent")
+        faixa.pack(fill="x", padx=MARGEM, pady=(14, 10))
+        faixa.grid_columnconfigure((0, 1, 2), weight=1, uniform="cnt")
 
-        self._atualizar_card()
-        self._recarregar_lista_concluidas()
+        specs = [
+            # (emoji_fallback, nome_ico, titulo, cor_numero, attr_label)
+            ("👥", "icone_hospedes.png", "Hóspedes no Hotel", AZUL_ESCURO, "lbl_hospedes"),
+            ("🛌",  "icone_ocupado.png",  "Ocupados",          AZUL_ESCURO, "lbl_ocupados"),
+            ("🛌"
+            "",  "icone_livre.png",    "Disponíveis",       AZUL_ESCURO, "lbl_disponiveis"),
+        ]
+        for col, (emoji, ico_arq, titulo, cor_num, attr) in enumerate(specs):
+            card = ctk.CTkFrame(
+                faixa, fg_color=BRANCO, corner_radius=14,
+                border_width=1, border_color=BORDA_CARD,
+            )
+            card.grid(
+                row=0, column=col,
+                padx=(0 if col == 0 else 10, 0),
+                sticky="nsew", ipady=10,
+            )
 
-    # ------------------------------------------------------------------
-    # CARD SUPERIOR
-    # ------------------------------------------------------------------
-    def _montar_card_reserva(self):
-        self.card = ctk.CTkFrame(
-            self, fg_color="white", corner_radius=12,
-            border_width=1, border_color=BORDA_CAMPO,
-        )
-        self.card.pack(fill="x", padx=MARGEM_LATERAL, pady=(0, 14))
-        self.card.grid_columnconfigure(0, weight=1)
-        self.card.grid_columnconfigure(1, weight=0)
+            # ícone
+            img = carregar_imagem(ico_arq, (38, 38))
+            if img:
+                self._img_refs.append(img)
+                ctk.CTkLabel(card, text="", image=img).pack(pady=(16, 4))
+            else:
+                ctk.CTkLabel(
+                    card, text=emoji,
+                    font=ctk.CTkFont(family=FONTE, size=30),
+                    text_color=AZUL_ESCURO,
+                ).pack(pady=(16, 4))
 
-        self.info_frame = ctk.CTkFrame(self.card, fg_color="transparent")
-        self.info_frame.grid(row=0, column=0, sticky="w", padx=20, pady=18)
+            # número
+            lbl_num = ctk.CTkLabel(
+                card, text="—",
+                font=ctk.CTkFont(family=FONTE, size=36, weight="bold"),
+                text_color=cor_num,
+            )
+            lbl_num.pack()
+            setattr(self, attr, lbl_num)
 
-        acao_frame = ctk.CTkFrame(self.card, fg_color="transparent")
-        acao_frame.grid(row=0, column=1, sticky="e", padx=20, pady=18)
-
-        self.botao_acao = criar_botao(
-            acao_frame, texto="", comando=self._on_clicar_botao, destaque=True,
-        )
-        self.botao_acao.configure(width=170)
-        self.botao_acao.grid(row=0, column=0)
-
-    def _atualizar_card(self):
-        """Redesenha as informações do card de acordo com self.reserva_atual."""
-        for widget in self.info_frame.winfo_children():
-            widget.destroy()
-
-        if self.reserva_atual is None:
+            # título
             ctk.CTkLabel(
-                self.info_frame,
-                text="Nenhuma reserva aguardando check-in no momento.",
-                font=ctk.CTkFont(family=FONTE, size=15, weight="bold"),
+                card, text=titulo,
+                font=ctk.CTkFont(family=FONTE, size=12),
                 text_color=TEXTO_CINZA,
-            ).grid(row=0, column=0, sticky="w")
-            self.botao_acao.configure(
-                text="—", state="disabled", fg_color=BORDA_CAMPO)
-            return
-
-        r = self.reserva_atual
-
-        ctk.CTkLabel(
-            self.info_frame,
-            text=f"Reserva #{r['id']}",
-            font=ctk.CTkFont(family=FONTE, size=18, weight="bold"),
-            text_color=AZUL_ESCURO,
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-
-        self._linha_info(self.info_frame, 1,
-                          "Apartamento:", str(r["apartamento"]))
-        self._linha_info(self.info_frame, 2, "Data de check-in:",
-                          _formatar_data(r["data_entrada"]))
-
-        self.botao_acao.configure(state="normal")
-        if r["checkin_feito"]:
-            self.botao_acao.configure(
-                text="Fazer Check-out",
-                fg_color=AZUL_ESCURO,
-                hover_color=AZUL_HOVER,
-            )
-        else:
-            self.botao_acao.configure(
-                text="Fazer Check-in",
-                fg_color=LARANJA,
-                hover_color=LARANJA_HOVER,
-            )
-
-    def _linha_info(self, parent, row, rotulo, valor):
-        ctk.CTkLabel(
-            parent, text=rotulo, font=(FONTE, 12), text_color=TEXTO_CINZA,
-        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
-        ctk.CTkLabel(
-            parent, text=valor, font=(FONTE, 13, "bold"), text_color="#222",
-        ).grid(row=row, column=1, sticky="w", pady=2)
-
-    def _on_clicar_botao(self):
-        if self.reserva_atual is None:
-            return
-
-        if self.reserva_atual["checkin_feito"]:
-            self._fazer_checkout()
-        else:
-            self._fazer_checkin()
+            ).pack(pady=(2, 16))
 
     # ------------------------------------------------------------------
-    # AÇÕES
+    # CARD COM TABELA (check-in ou check-out)
     # ------------------------------------------------------------------
-    def _fazer_checkin(self):
-        sucesso, mensagem = FazerCheckin(self.reserva_atual["id"])
-        if sucesso:
-            self.reserva_atual["checkin_feito"] = True
-            self._atualizar_card()
-        else:
-            self._mostrar_aviso(mensagem, erro=True)
-
-    def _fazer_checkout(self):
-        sucesso, mensagem = FazerCheckout(self.reserva_atual["id"])
-        if not sucesso:
-            self._mostrar_aviso(mensagem, erro=True)
-            return
-
-        # a reserva atual foi concluída: tira do card e coloca a próxima da fila
-        self.reserva_atual = self.fila_pendentes.pop(
-            0) if self.fila_pendentes else None
-        self._atualizar_card()
-        self._recarregar_lista_concluidas()
-
-    def _mostrar_aviso(self, mensagem, erro=False):
-        from tkinter import messagebox
-        if erro:
-            messagebox.showerror("Check-in / Check-out", mensagem)
-        else:
-            messagebox.showinfo("Check-in / Check-out", mensagem)
-
-    # ------------------------------------------------------------------
-    # LISTA DE RESERVAS CONCLUÍDAS (mesmo padrão de cards das outras telas)
-    # ------------------------------------------------------------------
-    def _montar_lista_concluidas(self):
-        ctk.CTkLabel(
-            self, text="Reservas concluídas",
-            font=ctk.CTkFont(family=FONTE, size=16, weight="bold"),
-            text_color=AZUL_ESCURO,
-        ).pack(anchor="w", padx=MARGEM_LATERAL + 4, pady=(0, 4))
-
-        self.lista_scroll = ctk.CTkScrollableFrame(
-            self, fg_color="white", corner_radius=12,
-            border_width=1, border_color=BORDA_CAMPO,
+    def _criar_tabela_secao(
+        self, parent, titulo, cor_badge, fg_badge, col_data,
+        attr_badge, attr_linhas, texto_btn, cor_btn, hover_btn,
+        callback, row,
+    ):
+        card = ctk.CTkFrame(
+            parent, fg_color=BRANCO, corner_radius=14,
+            border_width=1, border_color=BORDA_CARD,
         )
-        self.lista_scroll.pack(
-            fill="both", expand=True, padx=MARGEM_LATERAL, pady=(0, 20))
-        self.lista_scroll.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        card.grid(row=row, column=0, sticky="ew", pady=(0, 14))
+        card.grid_columnconfigure(0, weight=1)
 
-    def _recarregar_lista_concluidas(self):
-        for widget in self.lista_scroll.winfo_children():
-            widget.destroy()
+        # --- Cabeçalho azul-escuro ---
+        header = ctk.CTkFrame(card, fg_color=AZUL_ESCURO, corner_radius=10, height=46)
+        header.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        header.grid_propagate(False)
+        header.grid_columnconfigure(0, weight=1)
 
-        linhas = ListarReservasConcluidas()
-        concluidas = [_linha_para_dict(linha) for linha in linhas]
+        ctk.CTkLabel(
+            header, text=titulo,
+            font=ctk.CTkFont(family=FONTE, size=14, weight="bold"),
+            text_color=BRANCO,
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=10)
 
-        if not concluidas:
+        badge = ctk.CTkLabel(
+            header, text="0",
+            font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
+            text_color=BRANCO,
+            fg_color=cor_badge,
+            corner_radius=12,
+            width=30, height=24,
+        )
+        badge.grid(row=0, column=1, sticky="e", padx=16, pady=10)
+        setattr(self, attr_badge, badge)
+
+        # --- Cabeçalho das colunas ---
+        col_header = ctk.CTkFrame(card, fg_color=CINZA_HEADER, corner_radius=0, height=36)
+        col_header.grid(row=1, column=0, sticky="ew")
+        col_header.grid_propagate(False)
+        col_header.grid_columnconfigure(0, weight=3)
+        col_header.grid_columnconfigure(1, weight=1)
+        col_header.grid_columnconfigure(2, weight=2)
+        col_header.grid_columnconfigure(3, weight=1)
+
+        for idx, nome_col in enumerate(["Hóspede", "Quarto", col_data, "Ações"]):
             ctk.CTkLabel(
-                self.lista_scroll, text="Nenhuma reserva concluída ainda.",
-                font=(FONTE, 12), text_color=TEXTO_CINZA,
-            ).grid(row=0, column=0, sticky="w", padx=8, pady=8)
+                col_header, text=nome_col,
+                font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
+                text_color=TEXTO_CINZA, anchor="w",
+            ).grid(row=0, column=idx, sticky="w",
+                   padx=(16 if idx == 0 else 8, 8), pady=8)
+
+        # --- Área de linhas de dados ---
+        linhas_frame = ctk.CTkFrame(card, fg_color="transparent")
+        linhas_frame.grid(row=2, column=0, sticky="ew", padx=0, pady=(0, 6))
+        linhas_frame.grid_columnconfigure(0, weight=1)
+        setattr(self, attr_linhas, {
+            "frame": linhas_frame,
+            "col_data": col_data,
+            "texto_btn": texto_btn,
+            "cor_btn": cor_btn,
+            "hover_btn": hover_btn,
+            "callback": callback,
+        })
+
+    # ------------------------------------------------------------------
+    # RENDERIZAR LINHAS DA TABELA
+    # ------------------------------------------------------------------
+    def _renderizar(self, attr_linhas, dados):
+        cfg = getattr(self, attr_linhas)
+        frame: ctk.CTkFrame = cfg["frame"]
+
+        for w in frame.winfo_children():
+            w.destroy()
+
+        frame.grid_columnconfigure(0, weight=3)
+        frame.grid_columnconfigure(1, weight=1)
+        frame.grid_columnconfigure(2, weight=2)
+        frame.grid_columnconfigure(3, weight=1)
+
+        if not dados:
+            ctk.CTkLabel(
+                frame,
+                text="Nenhum registro para hoje.",
+                font=ctk.CTkFont(family=FONTE, size=12),
+                text_color=TEXTO_CINZA,
+            ).grid(row=0, column=0, columnspan=4, sticky="w", padx=16, pady=12)
             return
 
-        for i, r in enumerate(concluidas):
-            self._linha_concluida(i, r)
+        for i, (id_, hospede, quarto, data) in enumerate(dados):
+            bg = BRANCO if i % 2 == 0 else "#F7F9FC"
 
-    def _linha_concluida(self, row, r):
-        ctk.CTkLabel(
-            self.lista_scroll, text=f"Reserva #{r['id']}",
-            font=(FONTE, 13, "bold"), text_color="#222",
-        ).grid(row=row, column=0, sticky="w", padx=8, pady=6)
+            linha = ctk.CTkFrame(frame, fg_color=bg, corner_radius=0, height=42)
+            linha.grid(row=i, column=0, columnspan=4, sticky="ew")
+            linha.grid_propagate(False)
+            linha.grid_columnconfigure(0, weight=3)
+            linha.grid_columnconfigure(1, weight=1)
+            linha.grid_columnconfigure(2, weight=2)
+            linha.grid_columnconfigure(3, weight=1)
 
-        ctk.CTkLabel(
-            self.lista_scroll, text=f"Apto {r['apartamento']}",
-            font=(FONTE, 12), text_color=TEXTO_CINZA,
-        ).grid(row=row, column=1, sticky="w", padx=8, pady=6)
+            ctk.CTkLabel(
+                linha, text=str(hospede), anchor="w",
+                font=ctk.CTkFont(family=FONTE, size=12),
+                text_color="#222",
+            ).grid(row=0, column=0, sticky="w", padx=(16, 8), pady=8)
 
-        ctk.CTkLabel(
-            self.lista_scroll,
-            text=f"{_formatar_data(r['data_entrada'])} - {_formatar_data(r['data_saida'])}",
-            font=(FONTE, 12), text_color=TEXTO_CINZA,
-        ).grid(row=row, column=2, sticky="w", padx=8, pady=6)
+            ctk.CTkLabel(
+                linha, text=str(quarto), anchor="w",
+                font=ctk.CTkFont(family=FONTE, size=12),
+                text_color="#222",
+            ).grid(row=0, column=1, sticky="w", padx=8, pady=8)
 
-        ctk.CTkLabel(
-            self.lista_scroll, text=f"R$ {r['valor']:.2f}",
-            font=(FONTE, 12), text_color=TEXTO_CINZA,
-        ).grid(row=row, column=3, sticky="w", padx=8, pady=6)
+            ctk.CTkLabel(
+                linha, text=str(data), anchor="w",
+                font=ctk.CTkFont(family=FONTE, size=12),
+                text_color="#222",
+            ).grid(row=0, column=2, sticky="w", padx=8, pady=8)
+
+            ctk.CTkButton(
+                linha,
+                text=cfg["texto_btn"],
+                width=36, height=30,
+                font=ctk.CTkFont(family=FONTE, size=16, weight="bold"),
+                fg_color=cfg["cor_btn"],
+                hover_color=cfg["hover_btn"],
+                text_color=BRANCO,
+                corner_radius=8,
+                command=lambda _id=id_: cfg["callback"](_id),
+            ).grid(row=0, column=3, sticky="w", padx=8, pady=6)
+
+    # ------------------------------------------------------------------
+    # ATUALIZAÇÃO GERAL
+    # ------------------------------------------------------------------
+    def _atualizar(self):
+        self.lbl_hospedes.configure(text=str(_hospedes()))
+        self.lbl_ocupados.configure(text=str(_ocupadas()))
+        self.lbl_disponiveis.configure(text=str(_disponiveis()))
+
+        checkins  = _listar_checkins()
+        checkouts = _listar_checkouts()
+
+        self.lbl_badge_ci.configure(text=str(len(checkins)))
+        self.lbl_badge_co.configure(text=str(len(checkouts)))
+
+        self._renderizar("linhas_ci", checkins)
+        self._renderizar("linhas_co", checkouts)
+
+    # ------------------------------------------------------------------
+    # CALLBACKS
+    # ------------------------------------------------------------------
+    def _on_checkin(self, id_):
+        ok, msg = _confirmar_checkin(id_)
+        if ok:
+            self._atualizar()
+        else:
+            messagebox.showerror("Erro no Check-in", msg, parent=self)
+
+    def _on_checkout(self, id_):
+        ok, msg = _realizar_checkout(id_)
+        if ok:
+            self._atualizar()
+        else:
+            messagebox.showerror("Erro no Check-out", msg, parent=self)
 
 
 # ----------------------------------------------------------------------
-# TESTE ISOLADO DA TELA: python -m views.view_checkin
+# TESTE ISOLADO: python -m views.view_checkin
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     ctk.set_appearance_mode("light")
@@ -309,7 +487,7 @@ if __name__ == "__main__":
 
     janela = ctk.CTk()
     janela.title("Sistema de Reservas - Hotel")
-    janela.geometry("1000x680")
+    janela.geometry("900x680")
 
     tela = TelaCheckin(janela, app=None)
     tela.pack(fill="both", expand=True)
