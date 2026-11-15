@@ -20,12 +20,26 @@ def criar_tabela_uh():
 
 # -------------------------------------------------------------------------------------- BUSCAR
 
+def listar_uh():
+    try:
+        cs.execute("Select * FROM Unidade_Habitacional")
+        
+        return True, cs.fetchall()
+    
+    except sqlite3.Error:
+        print(f"Erro ao buscar apartamentos: {e}")
+
+        return False, []
+
 def buscar_uh(numero):
     try:
         cs.execute("SELECT * FROM Unidade_Habitacional WHERE numeracao = ?", (numero,))
+        
         return True, cs.fetchone()
+    
     except sqlite3.Error as e:
         print(f"Erro ao buscar apartamento: {e}")
+        
         return False, []
 
 
