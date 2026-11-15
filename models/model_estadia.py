@@ -123,7 +123,7 @@ def buscar_estadia_por_status(status):
 def atualizar_checkin_data_e_hora(id):
     try:
         cs.execute('''UPDATE Estadias SET
-                        checkin_data = date('now', 'localtime')
+                        checkin_data = date('now', 'localtime'),
                         checkin_hora = time('now', 'localtime')
                         WHERE id = ?''', (id,))
         cx.commit()
@@ -139,7 +139,7 @@ def atualizar_checkin_data_e_hora(id):
 def atualizar_checkout_data_e_hora(id):
     try:
         cs.execute('''UPDATE Estadias SET
-                        checkout_data = date('now', 'localtime')
+                        checkout_data = date('now', 'localtime'),
                         checkout_hora = time('now', 'localtime')
                         WHERE id = ?''', (id,))
         cx.commit()
@@ -156,7 +156,7 @@ def atualizar_estadia_status(status, id):
     
     if status in STATUS_PERMITIDO:
         try:
-            cs.execute("UPDATE Estadias SET status = ? WHERE id = ?", (status, id))
+            cs.execute('''UPDATE Estadias SET status = ? WHERE id = ?''', (status, id))
             cx.commit()
 
             return True, "Status atualizado com sucesso."

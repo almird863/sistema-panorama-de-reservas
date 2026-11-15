@@ -22,7 +22,7 @@ def criar_tabela_uh():
 
 def buscar_uh(numero):
     try:
-        cs.execute("SELECT * FROM Apartamentos WHERE numeracao = ?", (numero,))
+        cs.execute("SELECT * FROM Unidade_Habitacional WHERE numeracao = ?", (numero,))
         return True, cs.fetchone()
     except sqlite3.Error as e:
         print(f"Erro ao buscar apartamento: {e}")
