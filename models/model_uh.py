@@ -1,3 +1,6 @@
+blz blz
+deu bom caraio
+preciso fazer o controller uh carai
 import sqlite3
 
 cx = sqlite3.connect('databank/sistema-hotelaria.db')
@@ -12,7 +15,7 @@ def criar_tabela_uh():
                 ultima_att_dia DATE DEFAULT (date('now', 'localtime')),
                 ultima_att_hora TIME DEFAULT (time('now', 'localtime')),
                 vista_mar INTEGER NOT NULL DEFAULT 0 CHECK (vista_mar IN (0, 1)),
-                vista_centro INTEGER NOT NULL DEFAULT 0 CHECK (vista_rua IN (0, 1)),
+                vista_centro INTEGER NOT NULL DEFAULT 0 CHECK (vista_centro IN (0, 1)),
                 acessivel INTEGER NOT NULL DEFAULT 0 CHECK (acessivel IN (0, 1)))''')
     cx.commit()
 
@@ -22,9 +25,9 @@ def criar_tabela_uh():
 def listar_uh():
     try:
         cs.execute("Select * FROM Unidade_Habitacional")
-        
+
         return True, cs.fetchall()
-    
+
     except sqlite3.Error as e:
         print(f"Erro ao buscar apartamentos: {e}")
 
@@ -33,12 +36,12 @@ def listar_uh():
 def buscar_uh(numero):
     try:
         cs.execute("SELECT * FROM Unidade_Habitacional WHERE numeracao = ?", (numero,))
-        
+
         return True, cs.fetchone()
-    
+
     except sqlite3.Error as e:
         print(f"Erro ao buscar apartamento: {e}")
-        
+
         return False, []
 
 
@@ -50,9 +53,9 @@ def inserir_uh(numeracao, vm, vc, acc):
         cs.execute('''INSERT INTO Unidade_Habitacional (numeracao, vista_mar, vista_centro, acessivel)
                     VALUES (?,?,?,?)''', (numeracao, vm, vc, acc))
         cx.commit()
-        
+
         return True, f"Unidade Habitacional Nº{numeracao} inserida com sucesso."
-    
+
     except sqlite3.Error as e:
         cx.rollback()
 
