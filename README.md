@@ -1,4 +1,4 @@
-# HospedaWeb
+# SistemaPanoramaDeReserva
 
 ## Informações Gerais
 * **Projeto Integrador:** Plataforma Web para Inovação nos Meios de Hospedagem
