@@ -46,10 +46,10 @@ def buscar_uh(numero):
 # -------------------------------------------------------------------------------------- INSERIR
 
 
-def inserir_uh(numeracao, vm, vr, acc):
+def inserir_uh(numeracao, vm, vc, acc):
     try:
         cs.execute('''INSERT INTO Unidade_Habitacional (numeracao, vista_mar, vista_centro, acessivel)
-                    VALUES (?,?,?,?)''', (numeracao, vm, vr, acc))
+                    VALUES (?,?,?,?)''', (numeracao, vm, vc, acc))
         cx.commit()
         
         return True, f"Unidade Habitacional Nº{numeracao} inserida com sucesso."
