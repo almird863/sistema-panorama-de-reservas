@@ -1,5 +1,4 @@
 from models.model_uh import (inserir_uh, deletar_uh)
-from models.model_adm import (inserir_administrador)
 
 apartamentos = [{
     "numeracao": "101",
