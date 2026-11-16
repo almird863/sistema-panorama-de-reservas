@@ -130,4 +130,3 @@ def AutenticarCliente(cpf, senha):
     cliente_logado = cliente[0]
 
     return True, "Login realizado com sucesso."
-
