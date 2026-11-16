@@ -133,7 +133,7 @@ class JanelaPrincipal(ctk.CTk):
     MENU = [
         ("inicio", "Início", "🏠"),
         ("reservas", "Reservas", "📅"),
-        ("apartamentos", "Apartamentos", "🏢"),
+        ("uh", "Unidade Habitacional", "🏢"),
         ("hospedes", "Hóspedes", "👥"),
         ("checkinout", "Check-in /\nCheck-out", "✔"),
     ]
@@ -222,7 +222,9 @@ class JanelaPrincipal(ctk.CTk):
         self.registrar_tela(
             "reservas", lambda: __import__("views.view_reserva", fromlist=["TelaReservas"]).TelaReservas(self.container, self))
         self.registrar_tela(
-            "apartamentos", lambda: __import__("views.view_apartamentos", fromlist=["TelaApartamentos"]).TelaApartamentos(self.container, self))
+            "uh", lambda: __import__("views.view_uh", fromlist=["TelaUH"]).TelaUH(self.container, self))
+        self.registrar_tela(
+            "apartamentos", lambda: __import__("views.view_uh", fromlist=["TelaUH"]).TelaUH(self.container, self))
         self.registrar_tela(
             "hospedes", lambda: __import__("views.view_hospedes", fromlist=["ViewHospedes"]).ViewHospedes(self.container, self))
         self.registrar_tela(
