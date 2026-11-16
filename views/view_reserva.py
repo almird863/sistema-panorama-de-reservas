@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from tkinter import messagebox, simpledialog
 import customtkinter as ctk
 from controls.control_reserva import CadastrarReserva
-from controls.control_cliente import buscar_cliente
+# from controls.control_cliente import buscar_cliente
 from controls.control_apto import BuscarApto
 from views.view_usuarios import carregar_conta
 
