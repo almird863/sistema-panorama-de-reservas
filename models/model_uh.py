@@ -12,7 +12,7 @@ def criar_tabela_uh():
                 ultima_att_dia DATE DEFAULT (date('now', 'localtime')),
                 ultima_att_hora TIME DEFAULT (time('now', 'localtime')),
                 vista_mar INTEGER NOT NULL DEFAULT 0 CHECK (vista_mar IN (0, 1)),
-                vista_rua INTEGER NOT NULL DEFAULT 0 CHECK (vista_rua IN (0, 1)),
+                vista_centro INTEGER NOT NULL DEFAULT 0 CHECK (vista_rua IN (0, 1)),
                 acessivel INTEGER NOT NULL DEFAULT 0 CHECK (acessivel IN (0, 1)))''')
     cx.commit()
 
