@@ -9,10 +9,10 @@
 * **Instrutor:** Everton Azevedo
 
 ## Equipe Técnica
-* Almir - Models
-* Derek - Controls
-* Fernandes - Analista Doc
-* Wallace - Views
+* [Almir - Models](https://github.com/almird863)
+* [Derek - Controls](https://github.com/jacob-derek)
+* [Fernandes - Analista Doc](https://github.com/fjosefernandes1971-hash)
+* [Wallace - Views](https://github.com/wdwallaceduarte)
 
 ---
 
