@@ -744,6 +744,7 @@ class TelaReservas(TelaBase):
         )
         confirmou = messagebox.askyesno("Confirmar Reserva", mensagem, parent=self)
         if confirmou:
+            
             messagebox.showinfo(
                 "Reserva Concluída",
                 f"Reserva para o apartamento {dados_apto['tipo']} realizada com sucesso!",

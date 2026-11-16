@@ -171,7 +171,7 @@ def listar_db_reservas_para_checkin():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
             LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
             WHERE r.status = 'em aberto' AND r.checkin_feito = 0
@@ -189,7 +189,7 @@ def listar_db_reservas_hospedadas():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
             LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
             WHERE r.status = 'em aberto' AND r.checkin_feito = 1
@@ -207,7 +207,7 @@ def listar_db_reservas_concluidas():
         cs.execute('''
             SELECT r.id, r.id_cliente, r.id_apto, r.data_entrada, r.data_saida,
                    r.qt_pessoas, r.valor, r.status, r.checkin_feito,
-                   a.numero AS numero_apto
+                   a.numeracao AS numero_apto
             FROM Reservas r
             LEFT JOIN Apartamentos a ON a.id = r.id_apto  -- AJUSTAR: nome da coluna "numero"
             WHERE r.status = 'concluido'
