@@ -5,7 +5,7 @@ quanto executável de forma independente para testes.
 
 Seguindo o design da imagem:
 - Topo: Ícone e Título "Reservas - Confira a disponibilidade e faça sua reserva"
-- Painel Esquerdo: "Filtros de Busca" (Data Entrada, Data Saída com Calendário Popup, Tipo de Apto, Botão Buscar)
+- Painel Esquerdo: "Filtros de Busca" (Data Entrada, Data Saída com Calendário Popup, Tipo de Apto, Qtd Pessoas, Botão Buscar)
 - Painel Direito: "Apartamentos Disponíveis" (Cards com foto, tipo, descrição, diária e botão Reservar)
 """
 
@@ -34,6 +34,13 @@ except ImportError:
 
         def ao_exibir(self):
             pass
+
+# Import do Controller de Reservas (se disponível)
+try:
+    from controls.control_reserva import CadastrarReserva
+except Exception:
+    def CadastrarReserva(*args, **kwargs):
+        return False, "Controller de reservas não disponível."
 
 # Import do Model/Controller de Apartamentos (se disponível)
 try:
@@ -219,7 +226,7 @@ class TelaReservas(TelaBase):
         super().__init__(master, app, **kwargs)
         self.numero_filtro = getattr(app, "apartamento_selecionado", None)
         if app is not None:
-            app.apartamento_selecionado = None  
+            app.apartamento_selecionado = None
         # Referências de imagens para evitar garbage collection do Tkinter
         self._imagens_cache = []
         # Referências dos labels das ondas (para poder elevá-las ao topo do z-order)
@@ -380,7 +387,7 @@ class TelaReservas(TelaBase):
             text_color="#1E293B",
             height=38
         )
-        self.combo_tipo.pack(fill="x", pady=(0, 16))
+        self.combo_tipo.pack(fill="x", pady=(0, 10))
         self.combo_tipo.set("Todos")
         
         ctk.CTkLabel(
@@ -493,7 +500,7 @@ class TelaReservas(TelaBase):
             font=ctk.CTkFont(family=FONTE, size=14, weight="bold"),
             text_color="white"
         ).pack(side="left", padx=14)
-        
+
         self.btn_ver_todos = ctk.CTkButton(
             barra_tit, text="Ver todos", width=90, height=28,
             font=ctk.CTkFont(family=FONTE, size=12, weight="bold"),
@@ -697,39 +704,51 @@ class TelaReservas(TelaBase):
         self.numero_filtro = None
         self.renderizar_apartamentos(self.combo_tipo.get())
 
+    def _incrementar_pessoas(self):
+        """Aumenta a quantidade de pessoas em 1."""
+        try:
+            valor = int(self.entry_qt_pessoas.get())
+        except ValueError:
+            valor = 0
+        self.entry_qt_pessoas.delete(0, "end")
+        self.entry_qt_pessoas.insert(0, str(valor + 1))
+
+    def _decrementar_pessoas(self):
+        """Diminui a quantidade de pessoas em 1 (mínimo 1)."""
+        try:
+            valor = int(self.entry_qt_pessoas.get())
+        except ValueError:
+            valor = 2
+        novo = max(1, valor - 1)
+        self.entry_qt_pessoas.delete(0, "end")
+        self.entry_qt_pessoas.insert(0, str(novo))
+
+    def _converter_data(self, data_str):
+        """Converte DD/MM/AAAA -> AAAA-MM-DD (formato esperado pelo model)."""
+        try:
+            return datetime.strptime(data_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
     def ao_clicar_reservar(self, dados_apto):
         """Dispara o fluxo de confirmação de reserva."""
         data_in = self.entry_entrada.get().strip()
         data_out = self.entry_saida.get().strip()
-        qt_pessoas = self.combo_qt_pessoas.get()
-        
-        conta = carregar_conta(getattr(self.app, "usuario", ""))
-        dados = conta['perfil']
-        # cpf_cliente = simpledialog.askstring(title="Confirme seu CPF", prompt="Confirme o CPF para realizar a reserva.")
-        
-        if dados:
-            Status, dados_cliente = buscar_cliente(dados['cpf'])
-            
-            mensagem = (
-                f"Deseja confirmar a reserva do apartamento {dados_apto['tipo']}"
-                f"(Nº {dados_apto.get('numero', 'S/N')})?\n\n"
-                f"👤 CPF: {dados['cpf']}\n"
-                f"📅 Entrada: {data_in}\n"
-                f"📅 Saída: {data_out}\n"
-                f"💵 Diária: R$ {float(dados_apto['preco'])*int(qt_pessoas):.2f}\n"
+
+        mensagem = (
+            f"Deseja confirmar a reserva do apartamento {dados_apto['tipo']} "
+            f"(Nº {dados_apto.get('numero', 'S/N')})?\n\n"
+            f"📅 Entrada: {data_in}\n"
+            f"📅 Saída: {data_out}\n"
+            f"💵 Diária: R$ {dados_apto['preco']:.2f}\n"
+        )
+        confirmou = messagebox.askyesno("Confirmar Reserva", mensagem, parent=self)
+        if confirmou:
+            messagebox.showinfo(
+                "Reserva Concluída",
+                f"Reserva para o apartamento {dados_apto['tipo']} realizada com sucesso!",
+                parent=self
             )
-            
-            confirmou = messagebox.askyesno("Confirmar Reserva", mensagem, parent=self)
-            
-            if confirmou:
-                Status, dados_ap = BuscarApto(dados_apto.get('numero'))
-                
-                CadastrarReserva(dados_cliente[0], dados_ap[0], data_in, data_out, qt_pessoas)
-                messagebox.showinfo(
-                    "Reserva Concluída",
-                    f"Reserva para o apartamento {dados_apto['tipo']} realizada com sucesso!",
-                    parent=self
-                )
 
 
 # ----------------------------------------------------------------------
