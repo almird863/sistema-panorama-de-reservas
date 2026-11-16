@@ -57,8 +57,8 @@ def AutenticarAdm(usuario, senha):
         return False, "Senha incorreta."
     except VerificationError:
         return False, "Não foi possível verificar a senha."
-    except Exception as erro:
-        return False, str(erro)
+    except Exception:
+        return False, "Erro ao verificar a senha."
 
 
 #------------------------------------ ATUALIZAR ADMINISTRADOR
@@ -108,5 +108,5 @@ def DeletarAdm(id_adm):
     if id_adm <= 0:
         return False, "ID do administrador inválido."
 
-    return deletar_administrador(id)
+    return deletar_administrador(id_adm)
 
